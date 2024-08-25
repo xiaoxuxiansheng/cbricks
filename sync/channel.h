@@ -83,7 +83,7 @@ Channel<T>::~Channel(){
     // 2 唤醒所有的 writer 和 reader
     {
         this->m_lock.lock();
-        cbricks::base::Defer([this](){this->m_lock.unlock();});
+        cbricks::base::Defer defer([this](){this->m_lock.unlock();});
         this->m_readCond.broadcast();
         this->m_writeCond.broadcast();
     }
@@ -104,14 +104,14 @@ bool Channel<T>::write(const T& data){
 
     // 加锁
     this->m_lock.lock();
-    cbricks::base::Defer([this](){this->m_lock.unlock();});
+    cbricks::base::Defer lockDefer([this](){this->m_lock.unlock();});
 
     if (this->m_closed){
         return false; 
     }
 
     this->m_subscribers++;
-    cbricks::base::Defer([this](){this->m_subscribers--;});
+    cbricks::base::Defer suscribeDefer([this](){this->m_subscribers--;});
 
     // 如果容量已满
     while (this->m_size == this->m_array.size()){
@@ -148,14 +148,14 @@ bool Channel<T>::read(T& receiver){
     }
 
     this->m_lock.lock();
-    cbricks::base::Defer([this](){this->m_lock.unlock();});
+    cbricks::base::Defer lockDefer([this](){this->m_lock.unlock();});
 
     if (this->m_closed){
         return false; 
     }
 
     this->m_subscribers++;
-    cbricks::base::Defer([this](){this->m_subscribers--;});
+    cbricks::base::Defer subscribeDefer([this](){this->m_subscribers--;});
 
     while (!this->m_size){
         if (this->m_nonblock){

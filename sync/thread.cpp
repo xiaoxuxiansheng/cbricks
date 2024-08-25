@@ -10,7 +10,7 @@ static thread_local Thread* t_thread = nullptr;
 // cb——线程执行的函数 name——线程名称
 Thread::Thread(std::function<void()> cb, const std::string name):m_cb(cb),m_name(name){
     // 创建线程
-    if (pthread_create(&this->m_core,nullptr,&Thread::fc,this)){
+    if (pthread_create(&this->m_core,nullptr,&Thread::Fc,this)){
         throw std::exception();
     }
 }
@@ -42,17 +42,23 @@ void Thread::join(){
 }  
 
 // 获取当前线程
-Thread* Thread::GetThis(){
-    return t_thread;
+Thread::ptr Thread::GetThis(){
+    return t_thread->shared_from_this();
 }
 
 // 线程运行函数 schema，通过 static 风格，隐藏 this 指针
-void* Thread::fc (void* arg){
+void* Thread::Fc (void* arg){
     Thread* thread = (Thread*)arg;
     t_thread = thread;
     // 获取真实的当前线程 id
     thread->m_id = base::GetThreadId(); 
-    thread->m_cb();
+    
+    try{
+        thread->m_cb();
+    }
+    catch (...){
+
+    }
     return 0;
 }
 

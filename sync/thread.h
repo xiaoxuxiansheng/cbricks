@@ -9,7 +9,7 @@
 
 namespace cbricks{ namespace sync{
 
-class Thread : base::Noncopyable{
+class Thread : base::Noncopyable, std::enable_shared_from_this<Thread>{
 
 public: 
     // 共享智能指针类型别名
@@ -35,11 +35,11 @@ public:
 public:
     // 静态操作方法
     // 获取当前线程
-    static Thread* GetThis();
+    static Thread::ptr GetThis();
 
 private:
     // 线程运行函数 schema，通过 static 风格，隐藏 this 指针
-    static void* fc (void* arg);
+    static void* Fc (void* arg);
 
 private:
     // 私有成员变量
