@@ -3,3 +3,5 @@
 *.conf
 *.lock
 ./*
+*.d
+*.cpp.o.d
