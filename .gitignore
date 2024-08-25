@@ -5,3 +5,6 @@
 ./*
 *.d
 *.cpp.o.d
+.xmake/*
+build/*
+main

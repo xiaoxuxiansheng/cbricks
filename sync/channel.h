@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <vector>
+#include <memory>
 
 #include "../base/nocopy.h"
 #include "../base/defer.h"
@@ -13,6 +14,10 @@ namespace cbricks{namespace sync{
 // 阻塞队列，并发通道
 template <typename T>
 class Channel : base::Noncopyable {
+public:
+    // 共享智能指针类型别名
+    typedef std::shared_ptr<Channel> ptr;
+
 public:
     // 构造器函数.
     Channel(const int cap, const bool nonblock = false);
