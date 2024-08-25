@@ -1,7 +1,10 @@
 #pragma once 
 
 #include <atomic>
+#include <vector>
 
+#include "../base/nocopy.h"
+#include "../base/defer.h"
 #include "lock.h"
 #include "cond.h"
 
@@ -9,14 +12,10 @@ namespace cbricks{namespace sync{
 
 // 阻塞队列，并发通道
 template <typename T>
-class Channel{
+class Channel : base::Noncopyable {
 public:
-    // 数据类型
-    typedef T dataType;
-
-public:
-    // 构造器函数
-    Channel(const int cap = 1024);
+    // 构造器函数.
+    Channel(const int cap, const bool nonblock = false);
     // 析构函数
     ~Channel();
 
@@ -25,6 +24,7 @@ public:
     // 往 channel 中推送数据. 如果 channel 满了，则陷入阻塞
     // ret——true 写入数据成功. ret——false 因为 channel 被关闭才被唤醒
     bool write(const T& data);
+
     // 从 channel 中读取数据. 如果 channel 是空的，则陷入阻塞
     // ret——true 读取数据成功. ret——false 因为 channel 被关闭才被唤醒
     bool read(T& receiver);
@@ -38,13 +38,12 @@ private:
     Cond m_readCond;
     Cond m_writeCond;
 
-    // 操作的数据结构. 通过线性表 + 循环双指针实现循环数组
-    T* m_array;
+    // 操作的数据结构. 通过线性表 + 循环双指针实现环形数组
+    std::vector<T> m_array;
+    bool m_nonblock;
 
     // 当前的数据量
     int m_size;
-    // 总容量
-    int m_cap;
 
     // 移动的双指针
     int m_front;
@@ -52,9 +51,132 @@ private:
 
     // channel 是否已关闭
     std::atomic<bool> m_closed{false};
-    // 当前活跃的 reader 和 writer 总数
-    std::atomic<int> m_activeCount{0};
+
+    // 记录当前活跃的 reader 和 writer 总数
+    std::atomic<int> m_subscribers{0};
 };
+
+// 构造器函数
+template <typename T>
+Channel<T>::Channel(const int cap, const bool nonblock):m_nonblock(nonblock){
+    if (cap <= 0){
+        throw std::exception();
+    }
+
+    this->m_array = std::vector<T>(cap);
+    this->m_size = 0;
+    this->m_front = -1;
+    this->m_back = -1;
+}
+
+// 析构函数，需要唤醒所有的 writer 和 reader 之后，再进行退出
+template <typename T>
+Channel<T>::~Channel(){
+    // 1 将 closed 标记为 true，保证不再生成新的 writer 和 reader 
+    this->m_closed = true;
+    
+    // 2 唤醒所有的 writer 和 reader
+    {
+        this->m_lock.lock();
+        cbricks::base::Defer([this](){this->m_lock.unlock();});
+        this->m_readCond.broadcast();
+        this->m_writeCond.broadcast();
+    }
+
+    // 3 阻塞等待，直到所有 writer 和 reader 都正常退出
+    while (this->m_subscribers){
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+}
+
+// 往 channel 中推送数据. 如果 channel 满了，
+// ret——true 操作成功；ret——false 操作失败
+template <typename T>
+bool Channel<T>::write(const T& data){
+    if (this->m_closed){
+        return false;
+    }
+
+    // 加锁
+    this->m_lock.lock();
+    cbricks::base::Defer([this](){this->m_lock.unlock();});
+
+    if (this->m_closed){
+        return false; 
+    }
+
+    this->m_subscribers++;
+    cbricks::base::Defer([this](){this->m_subscribers--;});
+
+    // 如果容量已满
+    while (this->m_size == this->m_array.size()){
+        // 非阻塞模式，直接退出
+        if (this->m_nonblock){
+            return false;
+        }
+
+        // 阻塞模式，则陷入等待
+        this->m_writeCond.wait(this->m_lock);
+
+        // 已关闭，直接退出
+        if (this->m_closed){
+            return false;
+        }
+    }
+
+    // 写入数据
+    this->m_back = this->roundTrip(this->m_back);
+    this->m_array[this->m_back] = data;
+    this->m_size++;
+
+    // 写入成功后需要唤醒 reader 然后解锁返回
+    this->m_readCond.signal();
+    return true;
+}
+
+// 从 channel 中读取数据. 如果 channel 是空的
+// ret——true 操作成功；ret——false 操作失败
+template <typename T>
+bool Channel<T>::read(T& receiver){
+    if (this->m_closed){
+        return false; 
+    }
+
+    this->m_lock.lock();
+    cbricks::base::Defer([this](){this->m_lock.unlock();});
+
+    if (this->m_closed){
+        return false; 
+    }
+
+    this->m_subscribers++;
+    cbricks::base::Defer([this](){this->m_subscribers--;});
+
+    while (!this->m_size){
+        if (this->m_nonblock){
+            return false;
+        }
+
+        this->m_readCond.wait(this->m_lock);
+        if (this->m_closed){
+            return false;
+        }
+    }
+
+    // 读取数据
+    this->m_front = this->roundTrip(this->m_front);
+    receiver = this->m_array[this->m_front];
+    this->m_size--;
+
+    // 读取成功后需要唤醒 writer 然后解锁
+    this->m_writeCond.signal();
+    return true;    
+}
+
+template <typename T>
+int Channel<T>::roundTrip(const int cur){
+    return (cur + 1) % this->m_array.size();
+}
 
 }
 }

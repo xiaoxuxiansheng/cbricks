@@ -6,34 +6,8 @@
 
 namespace cbricks{namespace sync{
 
-// 基于 RAII 风格，实现的互斥锁控制守卫
-template <class Lock>
-class LockGuard{
-public:
-    LockGuard(Lock& lock);    
-    ~LockGuard();
-
-private:
-    Lock m_lock;
-};
-
-// 基于 RAII 风格，实现的读锁控制守卫
-template <class ReadLock>
-class ReadLockGuard{
-public:
-    ReadLockGuard(ReadLock& rlock);    
-    ~ReadLockGuard();
-
-private:
-    ReadLock m_rlock;
-};
-
 // 互斥锁. 不可进行值复制
 class Lock : base::Noncopyable{
-public:
-    // 类型别名
-    typedef LockGuard<Lock> LockGuard;
-
 public:
     // 构造/析构函数
     Lock();
@@ -53,11 +27,6 @@ private:
 
 // 读写锁. 不可进行值复制
 class RWLock : base::Noncopyable{
-public:
-    // 类型别名
-    typedef LockGuard<Lock> WriteLockGuard;
-    typedef ReadLockGuard<Lock> ReadLockGuard;
-
 public:
     // 构造函数/析构函数
     RWLock();

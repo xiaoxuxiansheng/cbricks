@@ -16,11 +16,11 @@ bool Cond::wait(Lock& lock){
 }
 
 bool Cond::signal(){
-    return pthread_cond_signal(&this->m_cond);
+    return pthread_cond_signal(&this->m_cond) == 0;
 }
 
 bool Cond::broadcast(){
-    return pthread_cond_broadcast(&this->m_cond);
+    return pthread_cond_broadcast(&this->m_cond) == 0;
 }
 
 }}

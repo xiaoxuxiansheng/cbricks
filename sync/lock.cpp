@@ -2,26 +2,6 @@
 
 namespace cbricks{namespace sync{
 
-template <class Lock> 
-LockGuard<Lock>::LockGuard(Lock& lock):m_lock(lock){
-    this->m_lock.lock();
-}  
-
-template <class Lock>
-LockGuard<Lock>::~LockGuard(){
-    this->m_lock.unlock();
-}
-
-template <class ReadLock>
-ReadLockGuard<ReadLock>::ReadLockGuard(ReadLock& rlock):m_rlock(rlock){
-    this->m_rlock.rlock();
-}  
-
-template <class ReadLock>
-ReadLockGuard<ReadLock>::~ReadLockGuard(){
-    this->m_rlock.unlock();
-}
-
 Lock::Lock(){
     pthread_mutex_init(&this->m_mutex,nullptr);
 }

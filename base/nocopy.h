@@ -8,7 +8,7 @@ public:
     Noncopyable() = default;
 
     // 默认析构函数
-    ~Noncopyable() = default;
+    virtual ~Noncopyable() = default;
 
     // 禁用拷贝构造函数
     Noncopyable(const Noncopyable&) = delete; 
