@@ -3,6 +3,8 @@ add_rules("mode.debug", "mode.release")
 set_languages("c++11")
 
 
-target("cbricks")
+target("test")
     set_kind("binary")
-    add_files("log/*.cpp")
+    add_files("./*.cpp")
+    add_files("./sync/*.cpp")
+    add_files("./base/*.cpp")
