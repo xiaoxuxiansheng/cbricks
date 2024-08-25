@@ -34,6 +34,8 @@ public:
     // ret——true 读取数据成功. ret——false 因为 channel 被关闭才被唤醒
     bool read(T& receiver);
 
+    const bool empty() const;
+
 private:
     int roundTrip(const int);
 
@@ -182,6 +184,12 @@ template <typename T>
 int Channel<T>::roundTrip(const int cur){
     return (cur + 1) % this->m_array.size();
 }
+
+template <typename T>
+const bool Channel<T>::empty()const{
+    return this->m_size == 0;
+}
+
 
 }
 }
