@@ -22,7 +22,7 @@ WorkerPool::WorkerPool(size_t threads){
         // 线程名称
         std::string threadName = this->getThreadNameByIndex(i);
         // 线程对应的本地队列实例插入到 map 中
-        this->m_taskQueues.insert({threadName,localq(new sync::Queue<task>())});
+        this->m_taskQueues.insert({threadName,localqPtr(new localq)});
         // 启动线程实例
         sync::Thread::ptr worker(new sync::Thread(std::bind(&WorkerPool::work,this)),threadName);
         this->m_threadPool.push_back(worker);
@@ -41,7 +41,7 @@ WorkerPool::~WorkerPool(){
 // 某个线程持续运行的调度主流程
 void WorkerPool::work(){
     // 获取到线程对应的本地队列
-    localq taskq = this->getLocalQueue();
+    localqPtr taskq = this->getLocalQueue();
 
     while (true){
         // 防止饥饿，最多调度 10 次的 localq 的情况下，需要看一次 t_schedq
@@ -90,7 +90,7 @@ bool WorkerPool::submit(task task){
         return false;
     }
 
-    localq taskq = this->getLocalQueueByThreadName(this->getThreadNameByIndex((s_taskId++)%this->m_threadPool.size()));
+    localqPtr taskq = this->getLocalQueueByThreadName(this->getThreadNameByIndex((s_taskId++)%this->m_threadPool.size()));
     taskq->push(task);
     return true;
 }
@@ -99,7 +99,7 @@ std::string WorkerPool::getThreadNameByIndex(int index){
     return "workerPool_thread_" + std::to_string(index);
 }
 
-WorkerPool::localq WorkerPool::getLocalQueue(){
+WorkerPool::localqPtr WorkerPool::getLocalQueue(){
     sync::Thread::ptr curThread = sync::Thread::GetThis();
     if (!curThread){   
         throw std::exception();
@@ -109,7 +109,7 @@ WorkerPool::localq WorkerPool::getLocalQueue(){
     return this->getLocalQueueByThreadName(threadName);
 }
 
-WorkerPool::localq WorkerPool::getLocalQueueByThreadName(std::string threadName){
+WorkerPool::localqPtr WorkerPool::getLocalQueueByThreadName(std::string threadName){
     auto item = this->m_taskQueues.find(threadName);
     if (item == this->m_taskQueues.end()){
         throw std::exception();
