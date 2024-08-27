@@ -45,4 +45,14 @@ void RWLock::unlock(){
     pthread_rwlock_unlock(&this->m_rwMutex);
 }
 
+SpinLock::SpinLock():m_locked(ATOMIC_FLAG_INIT){}
+
+void SpinLock::lock(){
+    while(this->m_locked.test_and_set(std::memory_order_acquire)){}
+}
+
+void SpinLock::unlock(){
+    this->m_locked.clear(std::memory_order_release);
+}
+
 }}

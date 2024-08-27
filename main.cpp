@@ -1,9 +1,11 @@
 #include <iostream>
-// #include <gtest/gtest.h>
+#include <vector>
+#include <string>
 
 #include "sync/lock.h"
 #include "sync/thread.h"
 #include "sync/coroutine.h"
+#include "sync/queue.h"
 #include "base/sys.h"
 #include "base/defer.h"
 
@@ -60,8 +62,60 @@ void testCoroutine(){
     std::cout << "success..." << std::endl;
 }
 
+void testLinkedList(){
+    cbricks::sync::Queue<int>::ptr queue(new cbricks::sync::Queue<int>());
+
+    // 异步启动 100 个线程写入节点
+    std::vector<cbricks::sync::Thread::ptr> writers;
+    
+    std::atomic<int> flag{0};
+    for (int i = 0; i < 100; i++){
+        cbricks::sync::Thread::ptr thread(new cbricks::sync::Thread([&queue,&flag]{
+            queue->push(flag++);
+        }));
+        writers.push_back(thread);
+    }
+
+    // 异步启动 100 个线程弹出节点
+    std::vector<std::string> res;
+    cbricks::sync::Lock lock;
+
+
+    std::vector<cbricks::sync::Thread::ptr> readers;
+    for (int i = 0; i < 100; i++){
+        cbricks::sync::Thread::ptr thread(new cbricks::sync::Thread([&queue,&lock,&res]{
+            int tmp;
+            if (queue->pop(tmp)){
+                lock.lock();
+                cbricks::base::Defer defer([&lock](){lock.unlock();});
+                res.push_back(std::to_string(tmp));
+            }
+        }));
+        readers.push_back(thread);
+    }   
+
+    for (int i = 0; i < writers.size(); i++){
+        writers[i]->join();
+    }
+
+    for (int i = 0; i < readers.size(); i++){
+        readers[i]->join();
+    }
+
+    // int tmp;
+    // while(list->pop(tmp)){
+    //     res.push_back(std::to_string(tmp));
+    // }
+
+
+    for (int i = 0; i < res.size(); i++){
+        std::cout<< res[i] << std::endl;
+    }
+}
+
 int main(int argc, char** argv){
     // testThread();
-    testCoroutine();
+    // testCoroutine();
+    testLinkedList();
 }
 

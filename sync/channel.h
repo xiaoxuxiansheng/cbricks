@@ -16,7 +16,7 @@ template <typename T>
 class Channel : base::Noncopyable {
 public:
     // 共享智能指针类型别名
-    typedef std::shared_ptr<Channel> ptr;
+    typedef std::shared_ptr<Channel<T>> ptr;
 
 public:
     // 构造器函数.

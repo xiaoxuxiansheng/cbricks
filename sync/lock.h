@@ -1,5 +1,6 @@
 #pragma once 
 
+#include <atomic>
 #include <pthread.h>
 
 #include "../base/nocopy.h"
@@ -41,6 +42,18 @@ public:
 private:
     // c 风格的读写锁
     pthread_rwlock_t m_rwMutex;
+};
+
+class SpinLock :base::Noncopyable{
+public:
+    SpinLock();
+
+public:
+    void lock();
+    void unlock();
+
+private:
+    std::atomic_flag m_locked;
 };
 
 }}

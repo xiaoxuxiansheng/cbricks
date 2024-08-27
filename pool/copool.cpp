@@ -5,10 +5,13 @@
 
 namespace cbricks{ namespace pool{
 
-// 线程私有的协程 list
-static thread_local std::queue<sync::Coroutine::ptr> t_localPool;
+// 任务 id 计数器
+static std::atomic<int> s_taskId{0};
 
-CoroutinePool::CoroutinePool(size_t threads){
+// 线程私有的协程 list
+static thread_local std::queue<sync::Coroutine::ptr> t_schedq;
+
+WorkerPool::WorkerPool(size_t threads){
     if (threads <= 0){
         throw std::exception();
     }
@@ -16,15 +19,17 @@ CoroutinePool::CoroutinePool(size_t threads){
     // 初始化好线程池中的每个线程
     this->m_threadPool.reserve(threads);
     for (int i = 0; i < this->m_threadPool.size();i++){
-        sync::Thread::ptr worker(new sync::Thread(std::bind(&CoroutinePool::schedule,this)));
+        // 线程名称
+        std::string threadName = this->getThreadNameByIndex(i);
+        // 线程对应的本地队列实例插入到 map 中
+        this->m_taskQueues.insert({threadName,localq(new sync::Queue<task>())});
+        // 启动线程实例
+        sync::Thread::ptr worker(new sync::Thread(std::bind(&WorkerPool::work,this)),threadName);
         this->m_threadPool.push_back(worker);
     }
-
-    // 初始化好 channel. 队列容量设为线程数量的 8 倍
-    this->m_channel.reset(new sync::Channel<std::function<void()>>(threads * 8));
 }
 
-CoroutinePool::~CoroutinePool(){
+WorkerPool::~WorkerPool(){
     this->m_closed = true;
     // 等待剩余任务都执行完成
     // 等待所有线程都关闭
@@ -33,60 +38,84 @@ CoroutinePool::~CoroutinePool(){
     }
 }
 
-void CoroutinePool::schedule(){
-    while (true){
-        // 本地队列有任务的情况下，优先处理本地队列
-        while (!t_localPool.empty()){
-            std::shared_ptr<sync::Coroutine> polled = t_localPool.front();
-            t_localPool.pop();
+// 某个线程持续运行的调度主流程
+void WorkerPool::work(){
+    // 获取到线程对应的本地队列
+    localq taskq = this->getLocalQueue();
 
-            // 执行协程
-            polled->go();
-            // 回来时查看协程的状态，如果已运行终止，则任务完成，否则重新回到队列
-            if (polled->getState() == sync::Coroutine::Dead){
-                continue;
+    while (true){
+        // 防止饥饿，最多调度 10 次的 localq 的情况下，需要看一次 t_schedq
+        // 本地队列有任务的情况下，优先处理本地队列
+        for (int i = 0; i < 10; i++){
+            task cb;
+            if (!taskq->pop(cb)){
+                break;
             }
 
-            t_localPool.push(polled);
+            sync::Coroutine::ptr worker(new sync::Coroutine(cb));
+            worker->go();
+
+            // 任务执行完成，进入下一个循环
+            if (worker->getState() == sync::Coroutine::Dead){
+                continue;
+            } 
+        
+            // 否则将其添加到本地队列中
+            t_schedq.push(worker);
         }
 
-        // 此时如果 pool 已经被关闭且全局队列为空，则可以退出
-        if (this->m_closed && this->m_channel->empty()){
-            return;
-        }
-
-        // 本地队列为空的情况下，取全局队列
-        std::function<void()> cb;
-
-        // channel 被关闭了，则判断是否
-        this->m_channel->read(cb);
-
-        // 执行任务函数为空，进入下一个循环
-        if (!cb){
+        // 查看本地 thread local 
+        if (t_schedq.empty()){
             continue;
         }
-        
-        sync::Coroutine::ptr worker(new sync::Coroutine(cb));
-        worker->go();
 
+        // 调度一次协程队列
+        sync::Coroutine::ptr worker = t_schedq.front();
+        t_schedq.pop();
+        worker->go();
         // 任务执行完成，进入下一个循环
         if (worker->getState() == sync::Coroutine::Dead){
             continue;
         } 
         
-        // 否则将其添加到本地队列中
-        t_localPool.push(worker);
+        // 否则将其添加回到本地队列中
+        t_schedq.push(worker);
     }
 }
 
 // 提交任务
-// cb 被组装成一个 item，投递到 channel 中
-// item 被一个线程取到之后，就属于一个线程了
-bool CoroutinePool::submit(std::function<void()> cb){
+// cb 被组装成一个 item，随机分配给到某个线程的本地队列中
+bool WorkerPool::submit(task task){
     if (this->m_closed){
         return false;
     }
-    return this->m_channel->write(cb);
+
+    localq taskq = this->getLocalQueueByThreadName(this->getThreadNameByIndex((s_taskId++)%this->m_threadPool.size()));
+    taskq->push(task);
+    return true;
+}
+
+std::string WorkerPool::getThreadNameByIndex(int index){
+    return "workerPool_thread_" + std::to_string(index);
+}
+
+WorkerPool::localq WorkerPool::getLocalQueue(){
+    sync::Thread::ptr curThread = sync::Thread::GetThis();
+    if (!curThread){   
+        throw std::exception();
+    }
+
+    std::string threadName = curThread->getName();
+    return this->getLocalQueueByThreadName(threadName);
+}
+
+WorkerPool::localq WorkerPool::getLocalQueueByThreadName(std::string threadName){
+    auto item = this->m_taskQueues.find(threadName);
+    if (item == this->m_taskQueues.end()){
+        throw std::exception();
+    }
+
+    return item->second;
 }
 
 }}

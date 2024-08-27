@@ -1,5 +1,6 @@
 #include <atomic>
 #include <exception>
+#include <stdlib.h>
 
 #include "coroutine.h"
 #include "once.h"
@@ -22,7 +23,7 @@ Coroutine::Coroutine(){
     // main 协程直接置为运行中
     this->m_state = Coroutine::Running;
     // main 协程的 id 为 0
-    this->m_id = 0;
+    this->m_id = ++s_coroutineId;
 
     // main 协程运行中，thread_local 中的 main 协程和当前工作协程都指向 main 协程
     t_mainWorker = this;
