@@ -9,7 +9,7 @@ namespace cbricks{ namespace pool{
 static std::atomic<int> s_taskId{0};
 
 // 线程私有的协程 list
-static thread_local std::queue<sync::Coroutine::ptr> t_schedq;
+static thread_local std::queue<WorkerPool::workerPtr> t_schedq;
 
 WorkerPool::WorkerPool(size_t threads){
     if (threads <= 0){
@@ -46,42 +46,61 @@ void WorkerPool::work(){
     while (true){
         // 防止饥饿，最多调度 10 次的 localq 的情况下，需要看一次 t_schedq
         // 本地队列有任务的情况下，优先处理本地队列
+        bool taskqEmpty = false;
         for (int i = 0; i < 10; i++){
-            task cb;
-            if (!taskq->pop(cb)){
-                break;
+            if (!this->readAndGo(taskq,false)){
+                taskqEmpty = true;
             }
-
-            sync::Coroutine::ptr worker(new sync::Coroutine(cb));
-            worker->go();
-
-            // 任务执行完成，进入下一个循环
-            if (worker->getState() == sync::Coroutine::Dead){
-                continue;
-            } 
-        
-            // 否则将其添加到本地队列中
-            t_schedq.push(worker);
         }
 
-        // 查看本地 thread local 
-        if (t_schedq.empty()){
+        // 获取协程私有的协程队列进行调度
+        if (!t_schedq.empty()){
+            // 调度一次协程队列
+            workerPtr worker = t_schedq.front();
+            t_schedq.pop();
+
+            this->goWorker(worker);
+            continue;         
+        }
+
+        // 本地队列仍有任务
+        if (!taskqEmpty){
             continue;
         }
 
-        // 调度一次协程队列
-        sync::Coroutine::ptr worker = t_schedq.front();
-        t_schedq.pop();
-        worker->go();
-        // 任务执行完成，进入下一个循环
-        if (worker->getState() == sync::Coroutine::Dead){
-            continue;
-        } 
+        // 本地队列和协程都是空的，则尝试从其他线程任务队列中窃取一半任务添加到本地队列
         
-        // 否则将其添加回到本地队列中
-        t_schedq.push(worker);
+
+        // 基于阻塞模式读取一次任务
+        this->readAndGo(taskq,true);
     }
 }
+
+bool WorkerPool::readAndGo(cbricks::pool::WorkerPool::localqPtr taskq,bool nonblock){
+    task cb;
+    // 非阻塞模式获取任务
+    if (!taskq->read(cb,nonblock)){
+        return false;
+    }
+
+    this->goTask(cb);    
+    return true;
+}
+
+void WorkerPool::goTask(task cb){
+    workerPtr _worker(new worker(cb));
+    this->goWorker(_worker);
+}
+
+void WorkerPool::goWorker(workerPtr worker){
+    worker->go();
+
+    // 任务未执行完成，则添加到 threadlocal 中的协程队列中
+    if (worker->getState() != sync::Coroutine::Dead){
+        t_schedq.push(worker);
+    }     
+}
+
 
 // 提交任务
 // cb 被组装成一个 item，随机分配给到某个线程的本地队列中
@@ -91,7 +110,7 @@ bool WorkerPool::submit(task task){
     }
 
     localqPtr taskq = this->getLocalQueueByThreadName(this->getThreadNameByIndex((s_taskId++)%this->m_threadPool.size()));
-    taskq->push(task);
+    taskq->write(task);
     return true;
 }
 

@@ -73,7 +73,7 @@ template<typename T>
 void Queue<T>::push(T data){
     // 对 head 加锁，完成节点插入
     this->m_head->lock.lock();
-    base::Defer defer([this](){
+    base::Defer headDefer([this](){
         this->m_head->lock.unlock();
     });
 

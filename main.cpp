@@ -1,11 +1,13 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <exception>
 
 #include "sync/lock.h"
 #include "sync/thread.h"
 #include "sync/coroutine.h"
 #include "sync/queue.h"
+#include "sync/channel.h"
 #include "base/sys.h"
 #include "base/defer.h"
 
@@ -113,9 +115,65 @@ void testLinkedList(){
     }
 }
 
+void testChannel(){
+    typedef cbricks::sync::Channel<std::string> chan;
+    typedef cbricks::sync::Thread thread;
+    typedef cbricks::sync::Lock lock;
+    chan ch(100);
+    
+    std::vector<thread::ptr> writers;
+    std::vector<thread::ptr> readers;
+
+    std::atomic<int> seed{0};
+    for (int i = 0; i < 10; i++){
+        thread::ptr tr(new thread([&ch,&seed](){
+            std::vector<std::string> tmps;
+            for (int i = 0; i < 10; i++){
+                tmps.push_back(std::to_string(seed++));
+            }
+            if (!ch.writeN(tmps)){
+                throw std::exception();
+        }
+        }));
+        writers.push_back(tr);
+    }
+
+    std::vector<std::string> res;
+    lock mutex;
+
+    for (int i = 0; i < 20; i++){
+        thread::ptr tr(new thread([&ch,&mutex, &res](){
+            std::vector<std::string> tmps(5);
+            if (!ch.readN(tmps)){
+                throw std::exception();
+            }
+            mutex.lock();
+            for (int i = 0; i < tmps.size(); i++){
+                res.push_back(tmps[i]);
+            }
+            mutex.unlock();
+        }));
+        readers.push_back(tr);
+    }
+
+    for (int i = 0; i < 10; i++){
+        writers[i]->join();
+    }
+
+    for (int i = 0; i < 20; i++){
+        readers[i]->join();
+    }
+
+    for (int i = 0; i < res.size(); i++){
+        std::cout << res[i] << std::endl;
+    }
+
+}
+
 int main(int argc, char** argv){
     // testThread();
     // testCoroutine();
-    testLinkedList();
+    // testLinkedList();
+    testChannel();
 }
 
