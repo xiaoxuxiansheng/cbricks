@@ -40,6 +40,8 @@ public:
 
     // 内部数据是否为空
     const bool empty();
+    const int size();
+    const int cap();
 
 private:
     int roundTrip(int index);
@@ -216,5 +218,16 @@ const bool Channel<T>::empty(){
     return this->m_size == 0;
 }
 
+template <typename T>
+const int Channel<T>::size(){
+    this->m_lock.lock();
+    cbricks::base::Defer lockDefer([this](){this->m_lock.unlock();});
+    return this->m_size;
+}
+
+template <typename T>
+const int Channel<T>::cap(){
+    return this->m_array.size();
+}
 
 }}
