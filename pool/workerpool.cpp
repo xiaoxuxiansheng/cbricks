@@ -20,22 +20,30 @@ WorkerPool::WorkerPool(size_t threads){
 
     // 初始化好线程池中的每个线程实例
     this->m_threadPool.reserve(threads);
+
+    std::vector<semaphore> sems(threads);
+    semaphore waitGroup;
     for (int i = 0; i < threads; i++){
         // 根据 index 映射得到线程名称
         std::string threadName = WorkerPool::getThreadNameByIndex(i);
         // 启动线程实例，该线程异步执行的方法为 WorkerPool::work
         // 将线程实例添加到线程池中
         // 通过信号量 保证线程实例先进入池子，然后再运行线程函数
-        semaphore sem;
-        thread::ptr thr (new thread(
+        this->m_threadPool.push_back(thread::ptr(
+            new thread(
             i,
-            new sync::Thread([this,&sem](){
-                sem.wait();
+            new sync::Thread([this,&sems,&waitGroup](){
+                sems[getThreadIndex()].wait();
+                waitGroup.notify();
                 this->work();
             },threadName),
-            localqPtr(new localq)));
-        this->m_threadPool.push_back(thread::ptr(thr));
-        sem.notify();
+            localqPtr(new localq))));
+
+        sems[i].notify();
+    }
+
+    for (int i = 0; i < threads; i++){
+        waitGroup.wait();
     }
 }
 

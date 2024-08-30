@@ -23,7 +23,7 @@ template <class ReadLock>
 class ScopedReadLock :base::Noncopyable{
 public:
     ScopedReadLock(ReadLock& lock):m_readlock(lock){
-        this->m_readlock.lock();
+        this->m_readlock.rlock();
     }
 
     ~ScopedReadLock(){

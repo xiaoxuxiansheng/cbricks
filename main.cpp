@@ -11,6 +11,7 @@
 #include "sync/coroutine.h"
 #include "sync/queue.h"
 #include "sync/channel.h"
+#include "sync/sem.h"
 #include "pool/workerpool.h"
 #include "base/sys.h"
 #include "base/defer.h"
@@ -176,25 +177,27 @@ void testChannel(){
 
 void testWorkerPool(){
     typedef cbricks::pool::WorkerPool workerPool;
-    workerPool::ptr workerPoolPtr(new workerPool(4));  
+    workerPool::ptr workerPoolPtr(new workerPool(8));  
 
     typedef cbricks::sync::Lock lock;
-
-    typedef cbricks::base::Defer defer;
+    typedef cbricks::sync::Semaphore semaphore;
 
     std::atomic<int> cnt{0};
     lock mutex;
+    semaphore sem;
 
-    for (int i = 0; i < 1000; i++){
-        workerPoolPtr->submit([&cnt,&mutex](){
+    for (int i = 0; i < 5000; i++){
+        workerPoolPtr->submit([&cnt,&mutex,&sem](){
             mutex.lock();
             std::cout << cnt++ << std::endl;
-            defer defer([&mutex](){mutex.unlock();});
+            mutex.unlock();
+            sem.notify();
         });
     }
 
-
-    sleep(1);
+    for (int i = 0; i < 5000; i++){
+        sem.wait();
+    }
 }
 
 int main(int argc, char** argv){
