@@ -2,12 +2,16 @@
 #include <vector>
 #include <string>
 #include <exception>
+#include <time.h>
+#include <unistd.h>
+
 
 #include "sync/lock.h"
 #include "sync/thread.h"
 #include "sync/coroutine.h"
 #include "sync/queue.h"
 #include "sync/channel.h"
+#include "pool/workerpool.h"
 #include "base/sys.h"
 #include "base/defer.h"
 
@@ -89,8 +93,8 @@ void testLinkedList(){
             int tmp;
             if (queue->pop(tmp)){
                 lock.lock();
-                cbricks::base::Defer defer([&lock](){lock.unlock();});
                 res.push_back(std::to_string(tmp));
+                lock.unlock();
             }
         }));
         readers.push_back(thread);
@@ -170,10 +174,43 @@ void testChannel(){
 
 }
 
+void testWorkerPool(){
+    typedef cbricks::pool::WorkerPool workerPool;
+    workerPool::ptr workerPoolPtr(new workerPool(4));  
+
+    typedef cbricks::sync::Lock lock;
+
+    typedef cbricks::base::Defer defer;
+
+    std::atomic<int> cnt{0};
+    lock mutex;
+
+    for (int i = 0; i < 1000; i++){
+        workerPoolPtr->submit([&cnt,&mutex](){
+            mutex.lock();
+            std::cout << cnt++ << std::endl;
+            defer defer([&mutex](){mutex.unlock();});
+        });
+    }
+
+
+    sleep(1);
+}
+
 int main(int argc, char** argv){
     // testThread();
     // testCoroutine();
     // testLinkedList();
-    testChannel();
+    // testChannel();
+    try{
+        testWorkerPool();
+    }
+    catch(std::exception& e){
+        std::cout << e.what() << std::endl;
+    }
+    catch(...){
+
+    }
+
 }
 

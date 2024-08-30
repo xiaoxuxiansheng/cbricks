@@ -35,7 +35,7 @@ public:
 public:
     // 静态操作方法
     // 获取当前线程
-    static Thread::ptr GetThis();
+    static Thread* GetThis();
 
 private:
     // 线程运行函数 schema，通过 static 风格，隐藏 this 指针

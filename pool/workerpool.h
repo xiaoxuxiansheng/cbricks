@@ -9,6 +9,7 @@
 #include "../sync/coroutine.h"
 #include "../sync/channel.h"
 #include "../sync/thread.h"
+#include "../sync/sem.h"
 #include "../base/nocopy.h"
 
 namespace cbricks{namespace pool{
@@ -24,13 +25,14 @@ public:
     // 本地任务队列智能指针别名
     typedef localq::ptr localqPtr;
     // 线程智能指针别名
-    typedef sync::Thread::ptr threadPtr;
+    typedef sync::Thread* threadPtr;
     // 一个已分配了运行任务的协程
     typedef sync::Coroutine worker;
     // 协程智能指针别名
     typedef sync::Coroutine::ptr workerPtr;
     // 读写锁别名
     typedef sync::RWLock rwlock;
+    typedef sync::Semaphore semaphore;
 
 public:
     // 构造/析构函数
@@ -47,7 +49,7 @@ public:
         * 请求参数：taks——提交的一笔任务  nonblock——是否为阻塞模式. 阻塞模式：线程本地任务队列满时阻塞等待 非阻塞模式：线程本地队列满时直接返回 false
         * 返回值：true——提交成功 false——提交失败
     */
-    bool submit(task task, bool nonblock);
+    bool submit(task task, bool nonblock = false);
 
     // 用于在一个工作协程调度任务过程中主动让出调度执行权
     void sched();
@@ -81,6 +83,7 @@ private:
         localqPtr taskq;
         // 构造函数
         thread(int index,threadPtr thr, localqPtr taskq):index(index),thr(thr),taskq(taskq){}
+        ~thread() = default;
     };
 
     // 从当前线程之外的线程中窃取半数任务填充到当前线程的本地队列中

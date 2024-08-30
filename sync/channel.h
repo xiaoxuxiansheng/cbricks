@@ -43,6 +43,9 @@ public:
     const int size();
     const int cap();
 
+    // 主动关闭 channel
+    void close();
+
 private:
     int roundTrip(int index);
 
@@ -82,13 +85,26 @@ Channel<T>::Channel(const int cap){
 // 析构函数，需要唤醒所有的 writer 和 reader 之后，再进行退出
 template <typename T>
 Channel<T>::~Channel(){
-    // 1 将 closed 标记为 true，保证不再生成新的 writer 和 reader 
-    this->m_closed = true;
+    this->close();
+}
+
+template <typename T>
+void Channel<T>::close(){
+    // 1 将 closed 标记为 true，保证不再生成新的 writer 和 reader
+    if (this->m_closed){
+        return;
+    } 
     
     // 2 唤醒所有的 writer 和 reader
     {
         this->m_lock.lock();
         cbricks::base::Defer defer([this](){this->m_lock.unlock();});
+
+        if (this->m_closed){
+            return;
+        } 
+        this->m_closed = true;
+        
         this->m_readCond.broadcast();
         this->m_writeCond.broadcast();
     }
@@ -158,8 +174,7 @@ bool Channel<T>::writeN(std::vector<T> datas, bool nonblock){
 // ret——true 操作成功；ret——false 操作失败
 template <typename T>
 bool Channel<T>::read(T& receiver, bool nonblock){
-    std::vector<T>receivers;
-    receivers.push_back("");
+    std::vector<T>receivers(1);
     if (!this->readN(receivers,nonblock)){
         return false;
     }  

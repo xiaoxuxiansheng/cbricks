@@ -102,8 +102,8 @@ bool Queue<T>::pop(T& data){
     }
 
     lockTarget->lock.lock();
-    base::Defer targetDefer([&lockTarget](){
-        lockTarget->lock.unlock();
+    base::Defer targetDefer([this](){
+        this->m_tail->prev->prev->lock.unlock();
     });
 
     std::shared_ptr<ListNode> targetPrev = lockTarget;

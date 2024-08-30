@@ -1,4 +1,5 @@
 #include <exception>
+#include <iostream>
 
 #include "thread.h"
 #include "../base/sys.h"
@@ -18,6 +19,7 @@ Thread::Thread(std::function<void()> cb, const std::string name):m_cb(cb),m_name
 Thread::~Thread(){
     if (this->m_core){
         pthread_detach(this->m_core);
+        this->m_core = 0;
     }
 }
 
@@ -34,16 +36,14 @@ const std::string& Thread::getName() const{
 // 等待线程执行完成. 若提前 join 了，则会把 m_core 置为 null，析构时需要配合使用
 void Thread::join(){
     if (this->m_core){
-        if (pthread_join(this->m_core,nullptr)){
-            throw std::exception();
-        }
+        pthread_join(this->m_core,nullptr);
         this->m_core = 0;
     }
 }  
 
 // 获取当前线程
-Thread::ptr Thread::GetThis(){
-    return t_thread->shared_from_this();
+Thread* Thread::GetThis(){
+    return t_thread;
 }
 
 // 线程运行函数 schema，通过 static 风格，隐藏 this 指针

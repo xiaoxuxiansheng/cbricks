@@ -4,11 +4,15 @@
 #include <pthread.h>
 
 #include "../base/nocopy.h"
+#include "scoped.h"
 
 namespace cbricks{namespace sync{
 
 // 互斥锁. 不可进行值复制
 class Lock : base::Noncopyable{
+public: 
+    typedef ScopedLock<Lock> lockGuard;
+
 public:
     // 构造/析构函数
     Lock();
@@ -28,6 +32,10 @@ private:
 
 // 读写锁. 不可进行值复制
 class RWLock : base::Noncopyable{
+public:
+    typedef ScopedLock<RWLock> lockGuard;
+    typedef ScopedReadLock<RWLock> readLockGuard;
+
 public:
     // 构造函数/析构函数
     RWLock();

@@ -2,7 +2,7 @@
 #include <queue>
 #include <cstdlib>
 
-#include "copool.h"
+#include "workerpool.h"
 
 namespace cbricks{ namespace pool{
 
@@ -20,13 +20,22 @@ WorkerPool::WorkerPool(size_t threads){
 
     // 初始化好线程池中的每个线程实例
     this->m_threadPool.reserve(threads);
-    for (int i = 0; i < this->m_threadPool.size();i++){
+    for (int i = 0; i < threads; i++){
         // 根据 index 映射得到线程名称
         std::string threadName = WorkerPool::getThreadNameByIndex(i);
         // 启动线程实例，该线程异步执行的方法为 WorkerPool::work
-        threadPtr thr(new sync::Thread(std::bind(&WorkerPool::work,this)),threadName);
         // 将线程实例添加到线程池中
-        this->m_threadPool.push_back(thread::ptr(new thread(i,thr,localqPtr(new localq))));
+        // 通过信号量 保证线程实例先进入池子，然后再运行线程函数
+        semaphore sem;
+        thread::ptr thr (new thread(
+            i,
+            new sync::Thread([this,&sem](){
+                sem.wait();
+                this->work();
+            },threadName),
+            localqPtr(new localq)));
+        this->m_threadPool.push_back(thread::ptr(thr));
+        sem.notify();
     }
 }
 
@@ -36,7 +45,8 @@ WorkerPool::~WorkerPool(){
     this->m_closed = true;
     // 等待所有线程都退出后完成析构
     for (int i = 0; i < this->m_threadPool.size(); i++){
-        this->m_threadPool[i]->thr->join();
+        this->m_threadPool[i]->taskq->close();
+        // this->m_threadPool[i]->thr->join();
     }
 }
 
@@ -48,14 +58,13 @@ bool WorkerPool::submit(task task, bool nonblock){
     }
 
     // 基于任务 id 对线程池长度取模，获取任务所属线程 index
-    int targetThreadId = (s_taskId++)%this->m_threadPool.size();
+    int targetThreadId = (s_taskId++)%(this->m_threadPool.size());
 
     // 此任务分配给到的目标线程
     thread::ptr targetThr = this->m_threadPool[targetThreadId];
 
     // 针对目标线程加读锁，防止和目标线程的窃取操作产生并发冲突导致死锁
-    targetThr->lock.rlock();
-    base::Defer defer([&targetThr](){targetThr->lock.unlock();});
+    rwlock::readLockGuard guard(targetThr->lock);
 
     // 往对应线程的队列中写入任务
     return targetThr->taskq->write(task, nonblock);
@@ -68,7 +77,7 @@ void WorkerPool::sched(){
 
 // 一个线程持续运行的调度主流程
 void WorkerPool::work(){
-    // 获取到当前线程对应的本地任务队列
+    // 获取到当前线程对应的本地任务队列 
     localqPtr taskq = this->getThread()->taskq;
 
     while (true){
@@ -173,8 +182,7 @@ void WorkerPool::workStealing(thread::ptr stealTo, thread::ptr stealFrom){
     }
 
     // 针对拟塞入任务的线程加写锁，使得窃取行为和任务提交行为发生隔离，防止死锁
-    stealTo->lock.lock();
-    base::Defer defer([&stealTo](){stealTo->lock.unlock();});
+    rwlock::lockGuard guard(stealTo->lock);
 
     // 如果此时目标任务队列容量不够，则不作窃取直接返回
     if (stealTo->taskq->size() + stealNum > stealTo->taskq->cap()){
@@ -217,7 +225,7 @@ const std::string WorkerPool::getThreadNameByIndex(int index){
 
 // 获取当前线程的线程名
 const std::string WorkerPool::getThreadName(){
-    sync::Thread::ptr curThread = sync::Thread::GetThis();
+    sync::Thread* curThread = sync::Thread::GetThis();
     if (!curThread){   
         throw std::exception();
     }

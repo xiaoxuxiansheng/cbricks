@@ -7,6 +7,7 @@ target("cbricks")
     add_files("*.cpp")
     add_files("base/*.cpp")
     add_files("sync/*.cpp")
+    add_files("pool/*.cpp")
 
 -- target("unitTest")
 --     set_kind("binary")
