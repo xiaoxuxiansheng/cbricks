@@ -8,3 +8,4 @@
 .xmake/*
 build/*
 main
+output/*

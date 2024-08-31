@@ -1,5 +1,6 @@
 #include <exception>
 #include <iostream>
+#include <stdexcept>
 
 #include "thread.h"
 #include "../base/sys.h"
@@ -14,6 +15,7 @@ Thread::Thread(std::function<void()> cb, const std::string name):m_cb(cb),m_name
     if (pthread_create(&this->m_core,nullptr,&Thread::Fc,this)){
         throw std::exception();
     }
+    this->m_sem.wait();
 }
 
 Thread::~Thread(){
@@ -40,7 +42,7 @@ void Thread::join(){
     }
 }  
 
-// 获取当前线程
+// 获取当前线程. 建议在线程池模式下使用此方法，否则一旦线程对象被析构，结果可能为空
 Thread* Thread::GetThis(){
     return t_thread;
 }
@@ -51,9 +53,14 @@ void* Thread::Fc (void* arg){
     t_thread = thread;
     // 获取真实的当前线程 id
     thread->m_id = base::GetThreadId(); 
-    
+    std::function<void()> cb;
+    cb.swap(thread->m_cb);
+    thread->m_sem.notify();
     try{
-        thread->m_cb();
+        cb();
+    }
+    catch(std::exception& e){
+        std::cout << e.what() << std::endl;
     }
     catch (...){
 

@@ -6,6 +6,7 @@
 #include <pthread.h>
 
 #include "../base/nocopy.h"
+#include "sem.h"
 
 namespace cbricks{ namespace sync{
 
@@ -33,8 +34,11 @@ public:
     void join();
 
 public:
-    // 静态操作方法
-    // 获取当前线程
+    /**
+     * 静态操作方法
+     * 获取当前线程
+     * 建议在线程池模式下使用此方法，否则一旦线程对象被析构，结果可能为空
+     */
     static Thread* GetThis();
 
 private:
@@ -50,6 +54,7 @@ private:
     pthread_t m_core;
     // 用户注入的线程执行函数
     std::function<void()> m_cb;
+    Semaphore m_sem;
 };
 
 }}

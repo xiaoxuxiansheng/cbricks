@@ -16,6 +16,7 @@
 #include "base/sys.h"
 #include "base/defer.h"
 #include "trace/assert.h"
+#include "log/log.h"
 
 
 
@@ -203,16 +204,19 @@ void testWorkerPool(){
     std::cout << cnt << std::endl;
 }
 
-void _testIn(){
+void testAssert(){
     CBRICKS_ASSERT(false,"test test");
 }
 
-void testIn(){
-    _testIn();
-}
+void testLog(){
+    typedef cbricks::log::Logger logger;
+    logger& l = logger::GetInstance();
+    l.Init("output/cbricks.log",5);
+    for (int i = 0; i < 10; i++){
+        l.log(logger::INFO,"test case: %d",i);
+    }
 
-void testAssert(){
-    testIn();
+    sleep(1);
 }
 
 int main(int argc, char** argv){
@@ -221,6 +225,7 @@ int main(int argc, char** argv){
     // testLinkedList();
     // testChannel();
     // testWorkerPool();
-    testAssert();
+    // testAssert();
+    testLog();
 }
 
