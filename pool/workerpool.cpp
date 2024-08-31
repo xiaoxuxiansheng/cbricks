@@ -65,7 +65,7 @@ WorkerPool::WorkerPool(size_t threads){
 // 析构函数
 WorkerPool::~WorkerPool(){
     // 将关闭标识置为 true，后续线程感知到此情况后会主动退出
-    this->m_closed = true;
+    this->m_closed.store(true);
     // 等待所有线程都退出后完成析构
     for (int i = 0; i < this->m_threadPool.size(); i++){
         this->m_threadPool[i]->taskq->close();
@@ -76,7 +76,7 @@ WorkerPool::~WorkerPool(){
 // 提交一个任务到协程调度池中，任务以闭包函数形式组装，根据任务 id 均匀分配给各个线程
 bool WorkerPool::submit(task task, bool nonblock){
     // 池子若已关闭，则不再提交
-    if (this->m_closed){
+    if (this->m_closed.load()){
         return false;
     }
 
@@ -105,7 +105,7 @@ void WorkerPool::work(){
 
     while (true){
         // 如果协程调度池关闭了，则无视后续任务直接退出
-        if (this->m_closed){
+        if (this->m_closed.load()){
             return;
         }
 

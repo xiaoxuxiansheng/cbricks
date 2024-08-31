@@ -19,7 +19,6 @@ Thread::Thread(std::function<void()> cb, const std::string name):m_cb(cb),m_name
 Thread::~Thread(){
     if (this->m_core){
         pthread_detach(this->m_core);
-        this->m_core = 0;
     }
 }
 

@@ -91,7 +91,7 @@ Channel<T>::~Channel(){
 template <typename T>
 void Channel<T>::close(){
     // 1 将 closed 标记为 true，保证不再生成新的 writer 和 reader
-    if (this->m_closed){
+    if (this->m_closed.load()){
         return;
     } 
     
@@ -100,10 +100,10 @@ void Channel<T>::close(){
         this->m_lock.lock();
         cbricks::base::Defer defer([this](){this->m_lock.unlock();});
 
-        if (this->m_closed){
+        if (this->m_closed.load()){
             return;
         } 
-        this->m_closed = true;
+        this->m_closed.store(true);
         
         this->m_readCond.broadcast();
         this->m_writeCond.broadcast();
@@ -126,7 +126,7 @@ bool Channel<T>::write(const T data, bool nonblock){
 
 template <typename T>
 bool Channel<T>::writeN(std::vector<T> datas, bool nonblock){
-    if (this->m_closed){
+    if (this->m_closed.load()){
         return false;
     }
 
@@ -135,7 +135,7 @@ bool Channel<T>::writeN(std::vector<T> datas, bool nonblock){
     cbricks::base::Defer lockDefer([this](){this->m_lock.unlock();});
 
     // 已关闭
-    if (this->m_closed){
+    if (this->m_closed.load()){
         return false; 
     }
 
@@ -153,7 +153,7 @@ bool Channel<T>::writeN(std::vector<T> datas, bool nonblock){
         this->m_writeCond.wait(this->m_lock);
 
         // 已关闭，直接退出
-        if (this->m_closed){
+        if (this->m_closed.load()){
             return false;
         }
     }
@@ -184,14 +184,14 @@ bool Channel<T>::read(T& receiver, bool nonblock){
 
 template <typename T>
 bool Channel<T>::readN(std::vector<T>& receivers, bool nonblock){
-    if (this->m_closed){
+    if (this->m_closed.load()){
         return false; 
     }
 
     this->m_lock.lock();
     cbricks::base::Defer lockDefer([this](){this->m_lock.unlock();});
 
-    if (this->m_closed){
+    if (this->m_closed.load()){
         return false; 
     }
 
@@ -204,7 +204,7 @@ bool Channel<T>::readN(std::vector<T>& receivers, bool nonblock){
         }
 
         this->m_readCond.wait(this->m_lock);
-        if (this->m_closed){
+        if (this->m_closed.load()){
             return false;
         }
     }

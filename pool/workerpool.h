@@ -24,7 +24,7 @@ public:
     typedef sync::Channel<task> localq;
     // 本地任务队列智能指针别名
     typedef localq::ptr localqPtr;
-    // 线程智能指针别名
+    // 线程指针别名
     typedef sync::Thread* threadPtr;
     // 一个已分配了运行任务的协程
     typedef sync::Coroutine worker;
