@@ -58,6 +58,7 @@ void Logger::Init(const char* fileName, const int splitLines, int bufferSize, in
     // 更新配置参数
     instance.m_maxLen = maxLen;
     instance.m_splitLines = splitLines;
+    instance.m_cnt = 0;
 
     // 处理时间信息
     time_t t = time(nullptr);
@@ -161,17 +162,18 @@ void Logger::asyncWriteLog(){
         instance.asyncWriteLogPreprocess();
         // 将日志数据写入到文件
         fputs(logItem.c_str(),instance.m_file);
+        instance.m_cnt++;
     }
 
     // buffer 已关闭... 退出线程
 }
 
 void Logger::asyncWriteLogPreprocess(){
+    Logger& instance = Logger::GetInstance();
 
-    Logger& instance = Logger::GetInstance();   
-
-    // 文件内日志条数加 1
-    instance.m_cnt++;
+    if (instance.m_cnt == 0){
+        return;
+    }  
 
     // 查看是否要分割文件
     timeval tv = base::getTimeOfDay();

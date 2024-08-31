@@ -211,9 +211,9 @@ void testAssert(){
 void testLog(){
     typedef cbricks::log::Logger logger;
     logger& l = logger::GetInstance();
-    l.Init("output/cbricks.log",5);
-    for (int i = 0; i < 10; i++){
-        l.log(logger::INFO,"test case: %d",i);
+    l.Init("output/cbricks.log",50);
+    for (int i = 0; i < 1000; i++){
+        LOG_INFO("test case: %d",i);
     }
 
     sleep(1);

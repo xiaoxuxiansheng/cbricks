@@ -93,11 +93,11 @@ private:
     // 信号量，用于在 logger 析构前等待异步线程完成退出
     semaphore m_sem;
 
-};
+}; 
+}}
 
 // 日志宏指令定义
-#define LOG_DEBUG(format, ...) Logger::GetInstance()->log(Logger::DEBUG, format, ##__VA_ARGS__); 
-#define LOG_INFO(format, ...) Logger::GetInstance()->log(Logger::INFO, format, ##__VA_ARGS__); 
-#define LOG_WARN(format, ...) Logger::GetInstance()->log(Logger::WARN, format, ##__VA_ARGS__); 
-#define LOG_ERROR(format, ...) Logger::GetInstance()->log(Logger::ERROR, format, ##__VA_ARGS__); 
-}}
+#define LOG_DEBUG(format, ...) cbricks::log::Logger::GetInstance().log(cbricks::log::Logger::DEBUG, format, ##__VA_ARGS__); 
+#define LOG_INFO(format, ...) cbricks::log::Logger::GetInstance().log(cbricks::log::Logger::INFO, format, ##__VA_ARGS__); 
+#define LOG_WARN(format, ...) cbricks::log::Logger::GetInstance().log(cbricks::log::Logger::WARN, format, ##__VA_ARGS__); 
+#define LOG_ERROR(format, ...) cbricks::log::Logger::GetInstance().log(cbricks::log::Logger::ERROR, format, ##__VA_ARGS__);
