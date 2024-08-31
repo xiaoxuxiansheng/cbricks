@@ -15,6 +15,7 @@
 #include "pool/workerpool.h"
 #include "base/sys.h"
 #include "base/defer.h"
+#include "trace/assert.h"
 
 void testThread(){
     pid_t threadId1 = 0;
@@ -200,20 +201,24 @@ void testWorkerPool(){
     std::cout << cnt << std::endl;
 }
 
+void _testIn(){
+    CBRICKS_ASSERT(false,"test test");
+}
+
+void testIn(){
+    _testIn();
+}
+
+void testAssert(){
+    testIn();
+}
+
 int main(int argc, char** argv){
     // testThread();
     // testCoroutine();
     // testLinkedList();
     // testChannel();
-    try{
-        testWorkerPool();
-    }
-    catch(std::exception& e){
-        std::cout << e.what() << std::endl;
-    }
-    catch(...){
-
-    }
-
+    // testWorkerPool();
+    testAssert();
 }
 
