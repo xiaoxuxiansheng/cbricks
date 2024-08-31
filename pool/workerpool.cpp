@@ -33,15 +33,30 @@ WorkerPool::WorkerPool(size_t threads){
             new thread(
             i,
             new sync::Thread([this,&sems,&waitGroup](){
+                /**
+                 * 此处 wait 操作是为了等待对应 thread 实例被推送进入 thread pool
+                 * 因为一旦 work 函数运行，就会需要从 thread pool 中获取 thread 实例
+                 */
                 sems[getThreadIndex()].wait();
+                /**
+                 * 此处 notify 操作是配合外层的 waitGroup.wait 操作
+                 * 保证所有 thread 都正常启动后，workerPool 构造函数才能退出
+                 * 这是为了防止 sems 被提前析构
+                 */
                 waitGroup.notify();
                 this->work();
             },threadName),
             localqPtr(new localq))));
-
+        /**
+         * 在 thread 实例被推送入 pool 后进行 notify
+         * 放行对应的线程执行函数
+         */
         sems[i].notify();
     }
 
+    /**
+     * 等待所有 thread 实例正常启动后，构造函数再退出
+     */
     for (int i = 0; i < threads; i++){
         waitGroup.wait();
     }

@@ -186,18 +186,18 @@ void testWorkerPool(){
     lock mutex;
     semaphore sem;
 
-    for (int i = 0; i < 5000; i++){
+    for (int i = 0; i < 10000; i++){
         workerPoolPtr->submit([&cnt,&mutex,&sem](){
-            mutex.lock();
-            std::cout << cnt++ << std::endl;
-            mutex.unlock();
+            cnt++;
             sem.notify();
         });
     }
 
-    for (int i = 0; i < 5000; i++){
+    for (int i = 0; i < 10000; i++){
         sem.wait();
     }
+
+    std::cout << cnt << std::endl;
 }
 
 int main(int argc, char** argv){
