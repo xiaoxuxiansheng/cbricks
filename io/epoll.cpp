@@ -1,116 +1,77 @@
-#include <unistd.h>
 #include <sys/epoll.h>
-#include <fcntl.h>
 
 #include "epoll.h" 
 #include "../trace/assert.h" 
 
 namespace cbricks{namespace io{
 
-void setNonblocking(int fd){
-    int oldOpt = fcntl(fd,F_GETFL);
-    int newOpt = oldOpt | O_NONBLOCK;
-    fcntl(fd,F_SETFL,newOpt);
-}
+const int MAX_EPOLL_EVENT_NUM = 10000; //最大事件数
 
 // 构造函数
-EpollFd::EpollFd(int epollFd):m_epollFd(epollFd){}
+EpollFd::EpollFd(int size) : Fd(epoll_create(size)){}
 
 // 析构函数
 EpollFd::~EpollFd(){
-    this->_close();
+    this->m_closed.store(true);
+    Fd::~Fd();
 }
 
 // 注册指定 fd 的读事件
-void EpollFd::addEvent(int fd, Event ev){
+void EpollFd::addEvent(Fd::ptr fd, EventType eType){
     CBRICKS_ASSERT(!this->m_closed.load(), "add event in closed epollfd");
-    CBRICKS_ASSERT(ev == Read || ev == Write, "add invalid event");
-    CBRICKS_ASSERT(fd > 0, "epoll fd add read event with nonpositive fd");
+    CBRICKS_ASSERT(eType == Read || eType == Write, "add invalid event");
+
+    int targetFd = fd->get();
+    CBRICKS_ASSERT(targetFd > 0, "epoll fd add read event with nonpositive fd");
     
     epoll_event e;
-    e.data.fd = fd;
+    e.data.fd = targetFd;
     
-    if (ev == Read){
+    if (eType == Read){
         e.events = EPOLLIN | EPOLLET | EPOLLRDHUP; 
     }else{
         e.events = EPOLLOUT | EPOLLET | EPOLLRDHUP; 
     }
-    
-    // 将 fd 以及关注的事件注册到 epoll fd 中
-    int ret = epoll_ctl(this->m_epollFd,EPOLL_CTL_ADD,fd,&e);
-    CBRICKS_ASSERT(ret == 0, "epoll ctl failed");
 
     // 将 fd 设置为非阻塞模式
-    setNonblocking(fd);
+    fd->setNonblocking(); 
+    
+    // 将 fd 以及关注的事件注册到 epoll fd 中
+    int ret = epoll_ctl(this->m_fd,EPOLL_CTL_ADD,targetFd,&e);
+    CBRICKS_ASSERT(ret == 0, "epoll ctl failed"); 
+
+    // fd 添加到池子中
+    lock::lockGuard guard(this->m_lock);
+    // 不存在即插入，存在即忽略
+    this->m_fds.insert({targetFd,fd});
 }
 
 // 移除指定 fd 
 void EpollFd::remove(int fd){
     CBRICKS_ASSERT(!this->m_closed.load(), "remove fd in closed epollfd");
-    epoll_ctl(this->m_epollFd,EPOLL_CTL_DEL,fd,0);
-    close(fd);
-}
-
-
-void EpollFd::_close(){
-    this->m_once.onceDo([this](){
-        this->m_closed.store(true);
-        close(this->m_epollFd);
-    });
-}
-
-
-/**
- * epollPool 全局 epoll 存储管理模块
- */
-
-// 构造析构私有
-EpollPool::~EpollPool(){
-    // 删除所有的 epoll fd
+    epoll_ctl(this->m_fd,EPOLL_CTL_DEL,fd,0);
+    // 从池子中移除
     lock::lockGuard guard(this->m_lock);
-    for (auto it : this->m_epollFds){
-        it.second->_close();
-    }
+    this->m_fds.erase(fd);   
 }
 
-EpollPool& EpollPool::GetInstance(){
-    static EpollPool instance;
-    return instance;
-}
-
-// 创建新的 epoll fd
-EpollFd& EpollPool::create(int size){
-    int epollFd = epoll_create(size);
-    CBRICKS_ASSERT(epollFd > 0, "create epoll failed");
-
-    EpollFd::ptr entity(new EpollFd(epollFd));
-
-    lock::lockGuard guard(this->m_lock);
-    this->m_epollFds.insert({epollFd,entity});
+// 等待事件到达
+std::vector<EpollFd::Event> EpollFd::wait(){
+    epoll_event rawEvents[MAX_EPOLL_EVENT_NUM];
+    int ret = epoll_wait(this->m_fd, rawEvents, MAX_EPOLL_EVENT_NUM, -1);
     
-    return *entity.get();
-}
-
-// 删除某个 epoll fd
-bool EpollPool::remove(int epollFd){
-    lock::lockGuard guard(this->m_lock);
-    auto it = this->m_epollFds.find(epollFd);
-    if (it == this->m_epollFds.end()){
-        return false;
+    std::vector<EpollFd::Event> events;
+    if (errno == EINTR){
+        return events;
     }
-    this->m_epollFds.erase(it);
-    return true;
-}
 
-std::vector<EpollFd&> EpollPool::getAll(){
-    lock::lockGuard guard(this->m_lock);
-    std::vector<EpollFd&> res;
-    res.reserve(this->m_epollFds.size());
-    for (auto it : this->m_epollFds){
-        res.push_back(*it.second.get());
+    CBRICKS_ASSERT(ret >= 0, "epoll wait fail");
+    
+    for (int i = 0; i < ret; i++){
+        events.push_back(Event(rawEvents[i].data.fd,rawEvents[i].events));
     }
-    return res;
-}
 
+    return events;
+}
 
 }}
