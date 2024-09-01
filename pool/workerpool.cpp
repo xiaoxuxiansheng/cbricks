@@ -69,7 +69,7 @@ WorkerPool::~WorkerPool(){
     // 等待所有线程都退出后完成析构
     for (int i = 0; i < this->m_threadPool.size(); i++){
         this->m_threadPool[i]->taskq->close();
-        // this->m_threadPool[i]->thr->join();
+        this->m_threadPool[i]->thr->join();
     }
 }
 

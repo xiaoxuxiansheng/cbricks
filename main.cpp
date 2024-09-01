@@ -224,8 +224,8 @@ int main(int argc, char** argv){
     // testCoroutine();
     // testLinkedList();
     // testChannel();
-    // testWorkerPool();
+    testWorkerPool();
     // testAssert();
-    testLog();
+    // testLog();
 }
 

@@ -7,6 +7,9 @@
 #include "../io/socket.h"
 #include "../io/epoll.h"
 #include "../sync/lock.h"
+#include "../sync/sem.h"
+#include "../pool/workerpool.h"
+#include "conn.h"
 
 
 namespace cbricks{namespace server{
@@ -14,10 +17,12 @@ namespace cbricks{namespace server{
 class EpollServer : base::Noncopyable{
 public:
     typedef sync::Lock lock;
+    typedef sync::Semaphore semaphore;
     typedef io::EpollFd epollFd;
     typedef io::SocketFd socketFd;
     typedef io::Fd fd;
-    typedef std::function<void( io::EpollFd::Event& e )> callback;
+    typedef std::function<void( Conn::ptr )> callback;
+    typedef pool::WorkerPool workerPool;
 
 public:
     // 构造析构
@@ -26,7 +31,7 @@ public:
 
 public:
     // 初始化
-    void init(int port, callback cb);
+    void init(int port, callback cb, const int threads = 8);
 
     // 启动
     void listenAndServe();
@@ -39,8 +44,8 @@ private:
     void serve();
     void process(epollFd::Event& event);
     void processConn();
-    void processRead();
-    void processWrite();
+    void processRead(epollFd::Event& event);
+    void processWrite(epollFd::Event& event);
 
 private:
     // socket fd
@@ -49,12 +54,15 @@ private:
     epollFd::ptr m_epollFd;
 
     lock m_lock;
+    std::atomic<bool> m_initialized{false};
     std::atomic<bool> m_served{false};
     std::atomic<bool> m_closed{false};
 
     // 端口 回调函数
     int m_port;
     callback m_cb;
+
+    workerPool::ptr m_workerPool;
 };
 
 

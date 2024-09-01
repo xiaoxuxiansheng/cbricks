@@ -8,19 +8,26 @@
 namespace cbricks{namespace server{
 
 // 初始化
-void EpollServer::init(int port, callback cb){
+void EpollServer::init(int port, callback cb, const int threads){
+    CBRICKS_ASSERT(threads > 0, "threads must be positive");
+
+
+    lock::lockGuard guard(this->m_lock);
+    CBRICKS_ASSERT(!this->m_initialized.load(), "repeat initialized");
+
     this->m_cb = cb;
     this->m_port = port;
+    this->m_workerPool.reset(new workerPool(threads));
+    this->m_initialized.store(true);
 }
 
 // 启动
 void EpollServer::listenAndServe(){
-    CBRICKS_ASSERT(this->m_cb != nullptr, "empty callback when running server");
-    CBRICKS_ASSERT(this->m_port > 0, "invalid port when running server");
+    CBRICKS_ASSERT(this->m_initialized.load(), "serve without initialize");
 
     {
         lock::lockGuard guard(this->m_lock);
-        CBRICKS_ASSERT(!this->m_served.load(), "repeat server");
+        CBRICKS_ASSERT(!this->m_served.load(), "repeat serve");
         this->m_served.store(true);
     } 
 
@@ -73,11 +80,11 @@ void EpollServer::process(epollFd::Event& event){
 
     // 处理到达的读请求
     if (event.events & epollFd::Read){
-        this->processRead();
+        this->processRead(event);
     }
 
     if (event.events & epollFd::Write){
-        this->processWrite();
+        this->processWrite(event);
     }
 }
 
@@ -97,12 +104,29 @@ void EpollServer::processConn(){
     }
 }
 
-void EpollServer::processRead(){
-
+void EpollServer::processRead(epollFd::Event& event){
+    int fd = event.fd;
+    semaphore sem;
+    // 初始化 conn 完成后再退出本函数
+    this->m_workerPool->submit([this,&fd,&sem](){
+        Conn::ptr conn(new Conn(fd));
+        sem.notify();
+        conn->readAll();
+        this->m_cb(conn);
+    });
+    sem.wait();
 }
 
-void EpollServer::processWrite(){
-    
+void EpollServer::processWrite(epollFd::Event& event){
+    int fd = event.fd;
+    semaphore sem;
+    // 初始化 conn 完成后再退出本函数
+    this->m_workerPool->submit([this,&fd,&sem](){
+        Conn::ptr conn(new Conn(fd));
+        sem.notify();
+        conn->write();
+    });
+    sem.wait();    
 }
 
 
