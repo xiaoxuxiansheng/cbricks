@@ -9,6 +9,7 @@ target("cbricks")
     add_files("trace/*.cpp")
     add_files("log/*.cpp")
     add_files("io/*.cpp")
+    add_files("server/*.cpp")
     add_files("sync/*.cpp")
     add_files("pool/*.cpp")
 
