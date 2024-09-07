@@ -1,41 +1,61 @@
-#include <exception>
+// 标准库队列实现. 依赖队列作为线程本地协程队列的存储载体
 #include <queue>
-#include <cstdlib>
 
+// workerpool 头文件
 #include "workerpool.h"
+// 本项目定义的断言头文件
+#include "../trace/assert.h"
 
+// namespace cbricks::pool
 namespace cbricks{ namespace pool{
 
-// 用于分配任务 id 的计数器. 任务根据自己的 id 会被均匀分配给各个线程
+/**
+ * 全局变量 s_taskId：用于分配任务 id 的全局递增计数器，通过原子变量保证并发安全
+ * 每个任务函数会根据分配到的 id，被均匀地分发给各个线程，以此实现负载均衡
+*/
 static std::atomic<int> s_taskId{0};
 
-// 一个线程私有的协程队列，当协程中一个任务没有一次性执行完成时，则会被暂存到此队列中等待后续被相同的线程调度
+/**
+ * 线程本地变量  t_schedq：线程私有的协程队列
+ * 当线程下某个协程没有一次性将任务执行完成时（任务调用了 sched 让渡函数），则该协程会被暂存于此队列中，等待后续被相同的线程继续调度
+ */
 static thread_local std::queue<WorkerPool::workerPtr> t_schedq;
 
-// 构造函数
+/**
+ * workerpool 构造函数：
+ * - 初始化好各个线程实例 thread
+ * - 将各 thread 添加到线程池 m_threadPool 中
+ */
 WorkerPool::WorkerPool(size_t threads){
-    if (threads <= 0){
-        throw std::exception();
-    }
+    CBRICKS_ASSERT(threads > 0, "worker pool init with nonpositive threads num");
 
-    // 初始化好线程池中的每个线程实例
+    // 为线程池预留好对应的容量
     this->m_threadPool.reserve(threads);
 
+    /**
+     * 构造好对应于每个 thread 的信号量
+     * 这是为了保证 thread 实例先被添加进入 m_threadPool，thread 中的调度函数才能往下执行
+     * 这样做是因为 thread 调度函数有依赖于从 m_threadPool 获取自身实例的操作
+    */
     std::vector<semaphore> sems(threads);
+    // 另一个信号量，用于保证所有 thread 调度函数都正常启动后，当前构造函数才能退出，避免 sems 被提前析构
     semaphore waitGroup;
+
+    // 初始化好对应数量的 thread 实例并添加进入 m_threadPool
     for (int i = 0; i < threads; i++){
-        // 根据 index 映射得到线程名称
+        // 根据 index 映射得到 thread 名称
         std::string threadName = WorkerPool::getThreadNameByIndex(i);
-        // 启动线程实例，该线程异步执行的方法为 WorkerPool::work
-        // 将线程实例添加到线程池中
-        // 通过信号量 保证线程实例先进入池子，然后再运行线程函数
+        // 将 thread 实例添加进入 m_threadPool
         this->m_threadPool.push_back(thread::ptr(
+            // thread 实例初始化
             new thread(
             i,
+            // 
             new sync::Thread([this,&sems,&waitGroup](){
                 /**
-                 * 此处 wait 操作是为了等待对应 thread 实例被推送进入 thread pool
-                 * 因为一旦 work 函数运行，就会需要从 thread pool 中获取 thread 实例
+                 * 此处 wait 操作是需要等待对应 thread 实例先被推送进入 m_threadPool
+                 * 因为一旦后续的 work 函数运行，就会涉及从 m_threadPool 中获取 thread 实例的操作
+                 * 因此先后顺序不能颠倒
                  */
                 sems[getThreadIndex()].wait();
                 /**
@@ -44,12 +64,17 @@ WorkerPool::WorkerPool(size_t threads){
                  * 这是为了防止 sems 被提前析构
                  */
                 waitGroup.notify();
+                // 异步启动的 thread，最终运行的调度函数是 workerpool::work
                 this->work();
-            },threadName),
+                
+            },
+            // 注入 thread 名称，与 index 有映射关系
+            threadName),
+            // 分配给 thread 的本地任务队列
             localqPtr(new localq))));
         /**
-         * 在 thread 实例被推送入 pool 后进行 notify
-         * 放行对应的线程执行函数
+         * 在 thread 实例被推送入 m_threadPool 后进行 notify
+         * 这样 thread 调度函数才会被向下放行
          */
         sems[i].notify();
     }
@@ -64,100 +89,127 @@ WorkerPool::WorkerPool(size_t threads){
 
 // 析构函数
 WorkerPool::~WorkerPool(){
-    // 将关闭标识置为 true，后续线程感知到此情况后会主动退出
+    // 将 workpool 的关闭标识置为 true，后续运行中的线程感知到此标识后会主动退出
     this->m_closed.store(true);
-    // 等待所有线程都退出后完成析构
+    // 等待所有线程都退出后，再退出 workpool 的析构函数
     for (int i = 0; i < this->m_threadPool.size(); i++){
+        // 关闭各 thread 的本地任务队列
         this->m_threadPool[i]->taskq->close();
+        // 等待各 thread 退出
         this->m_threadPool[i]->thr->join();
     }
 }
 
-// 提交一个任务到协程调度池中，任务以闭包函数形式组装，根据任务 id 均匀分配给各个线程
+/**
+ * submit: 提交一个任务到协程调度池中，任务以闭包函数 void() 的形式组装
+ * - 为任务分配全局递增且唯一的 taskId
+ * - 根据 taskId 将任务均匀分发给指定 thread
+ * - 将任务写入到指定 thread 的本地任务队列中
+ */
 bool WorkerPool::submit(task task, bool nonblock){
-    // 池子若已关闭，则不再提交
+    // 若 workerpool 已关闭，则提交失败
     if (this->m_closed.load()){
         return false;
     }
 
-    // 基于任务 id 对线程池长度取模，获取任务所属线程 index
+    // 基于任务 id 对 m_threadPool 长度取模，将任务映射到指定 thread
     int targetThreadId = (s_taskId++)%(this->m_threadPool.size());
-
-    // 此任务分配给到的目标线程
     thread::ptr targetThr = this->m_threadPool[targetThreadId];
 
-    // 针对目标线程加读锁，防止和目标线程的窃取操作产生并发冲突导致死锁
+    // 针对目标 thread 加读锁，这是为了防止和目标 thread 的 workstealing 操作并发最终因任务队列 taskq 容量溢出而导致死锁
     rwlock::readLockGuard guard(targetThr->lock);
 
-    // 往对应线程的队列中写入任务
+    // 往对应 thread 的本地任务队列中写入任务
     return targetThr->taskq->write(task, nonblock);
 }
 
-// 在闭包函数执行过程中，可以通过该方法主动让出线程的执行权
+// sched：让渡函数. 在任务执行过程中，可以通过该方法主动让出线程的执行权，则此时任务所属的协程会被添加到 thread 的本地协程队列 t_schedq 中，等待后续再被调度执行
 void WorkerPool::sched(){
     worker::GetThis()->sched();
 }
 
-// 一个线程持续运行的调度主流程
+/**
+ * work: 线程运行的主函数
+ * 1） 获取需要调度的协程（下述任意步骤执行成功，则跳到步骤 2））
+ *   - 从本地任务队列 taskq 中取任务，获取成功则为之初始化协程实例
+ *   - 从本地协程队列 schedq 中取协程
+ *   - 从其他线程的任务队列 taskq 中偷取一半任务到本地任务队列
+ * 2） 调度协程执行任务
+ * 3) 针对主动让渡而退出的协程，添加到本地协程队列
+ * 4) 循环上述流程
+ */
 void WorkerPool::work(){
-    // 获取到当前线程对应的本地任务队列 
+    // 获取到当前 thread 对应的本地任务队列 taskq
     localqPtr taskq = this->getThread()->taskq;
 
+    // main loop
     while (true){
-        // 如果协程调度池关闭了，则无视后续任务直接退出
+        // 如果 workerpool 已关闭 则主动退出
         if (this->m_closed.load()){
             return;
         }
 
         /**  
-         * 调度优先级为 本地任务队列 taskq -> 
-         * 本地协程队列 t_t_schedq -> 
-         * 窃取其他线程的本地任务队列 other_taskq
-         * 为防止饥饿，每调度 10 次的 localq 后，必须尝试处理一次 t_schedq 
+         * 执行优先级为 本地任务队列 taskq -> 本地协程队列 t_t_schedq -> 窃取其他线程任务队列 other_taskq
+         * 为防止饥饿，至多调度 10 次的 taskq 后，必须尝试处理一次 t_schedq 
         */
 
-        // 标识本地任务队列是否为空
+        // 标识本地任务队列 taskq 是否为空
         bool taskqEmpty = false;
-
-        // 尝试进行 10 次本地任务队列调度
+        // 至多调度 10 次本地任务队列 taskq
         for (int i = 0; i < 10; i++){
-            // 针对本地队列任务调度，如果为空，则将标识置为 true 并且 break
+            // 以【非阻塞模式】从 taskq 获取任务并为之分配协程实例和调度执行
             if (!this->readAndGo(taskq,false)){
+                // 如果 taskq 为空，将 taskqEmpty 置为 true 并直接退出循环
                 taskqEmpty = true;
                 break;
             }
         }
 
-        // 调度一次线程私有的协程队列 t_schedq
+        // 尝试从线程本地的协程队列 t_schedq 中获取协程并进行调度
         if (!t_schedq.empty()){
-            // 从协程队列中取出头部的协程
+            // 从协程队列中取出头部的协程实例
             workerPtr worker = t_schedq.front();
             t_schedq.pop();
             // 进行协程调度
             this->goWorker(worker);
+            // 处理完成后直接进入下一轮循环
             continue;         
         }
 
-        // 如果本地队列仍有任务，则进入下一个循环
+        // 如果未发现 taskq 为空，则无需 workstealing，直接进入下一轮循环
         if (!taskqEmpty){
             continue;
         }
 
         /** 
-         * 走到这里意味着本地任务队列和协程队列都是空的
-         * 此时需要随机选择一个目标线程窃取半数任务添加到本地队列
+         * 走到这里意味着 taskq 和 schedq 都是空的，则要尝试发起窃取操作
+         * 随机选择一个目标线程窃取半数任务添加到本地队列中
         */
         this->workStealing();
 
-        // 以阻塞模式获取本地任务，如果陷入阻塞则说明没有任务需要处理
+        /**  
+         * 以【阻塞模式】尝试从本地任务获取任务并调度执行
+         * 若此时仍没有可调度的任务，则当前 thread 陷入阻塞，让出 cpu 执行权
+         * 直到有新任务分配给当前 thread 时，thread 才会被唤醒
+        */
         this->readAndGo(taskq,true);
     }
 }
 
+/**
+ * readAndGo：
+ *   - 从指定任务队列中获取一个任务
+ *   - 为之分配协程实例并调度执行
+ *   - 若协程实例未一次性执行完成（执行了让渡 sched），则将协程添加到线程本地的协程队列 schedq 中
+ * param：taskq——任务队列；nonblock——是否以非阻塞模式从任务队列中获取任务
+ * response：true——成功；false，失败（任务队列 taskq 为空）
+ */
 // 将一个任务包装成协程并进行调度. 如果没有一次性调度完成，则将协程实例添加到线程本地的协程队列 t_schedq
-bool WorkerPool::readAndGo(cbricks::pool::WorkerPool::localqPtr taskq,bool nonblock){
+bool WorkerPool::readAndGo(cbricks::pool::WorkerPool::localqPtr taskq, bool nonblock){
+    // 任务容器
     task cb;
-    // 按照指定模式从本地队列中获取任务
+    // 从 taskq 中获取任务
     if (!taskq->read(cb,nonblock)){
         return false;
     }
@@ -167,77 +219,87 @@ bool WorkerPool::readAndGo(cbricks::pool::WorkerPool::localqPtr taskq,bool nonbl
     return true;
 }
 
-// 为任务创建协程实例并进行调度
+/**
+ * goTask
+ *   - 为指定任务分配协程实例
+ *   - 执行协程
+ *   - 若协程实例未一次性执行完成（执行了让渡 sched），则将协程添加到线程本地的协程队列 schedq 中
+ * param：cb——待执行的任务
+ */
 void WorkerPool::goTask(task cb){
-    // 封装成协程实例
+    // 初始化协程实例
     workerPtr _worker(new worker(cb));
     // 调度协程
     this->goWorker(_worker);
 }
 
-// 调度协程
+/**
+ * goWorker
+ *   - 执行协程
+ *   - 若协程实例未一次性执行完成（执行了让渡 sched），则将协程添加到线程本地的协程队列 schedq 中
+ * param：worker——待运行的协程
+ */
 void WorkerPool::goWorker(workerPtr worker){
-    // 让出线程 main 协程执行权给到工作协程执行
+    // 调度协程，此时线程的执行权会切换进入到协程对应的方法栈中
     worker->go();
-
-    // 从工作协程切回 main，如果此时协程状态不是已完成，则将其添加到线程本地的协程队列 t_schedq 中
+    // 走到此处意味着线程执行权已经从协程切换回来
+    // 如果此时协程并非已完成的状态，则需要将其添加到线程本地的协程队列 schedq 中，等待后续继续调度
     if (worker->getState() != sync::Coroutine::Dead){
         t_schedq.push(worker);
     }     
 }
 
-// 随机从本线程之外的某个线程中窃取一半的任务给到本线程
-void WorkerPool::workStealing(){    
+// 从某个 thread 中窃取一半任务给到本 thread 的 taskq
+void WorkerPool::workStealing(){   
+    // 选择一个窃取的目标 thread 
     thread::ptr stealFrom = this->getStealingTarget();
     if (!stealFrom){
         return;
     }
+    // 从目标 thread 中窃取半数任务添加到本 thread taskq 中
     this->workStealing(this->getThread(),stealFrom);
 }
 
-// 从 线程：stealFrom 中窃取一半的任务给到线程：stealTo
+// 从 thread:stealFrom 中窃取半数任务给到 thread:stealTo
 void WorkerPool::workStealing(thread::ptr stealTo, thread::ptr stealFrom){    
-    // 窃取目标任务队列任务总数的一半
+    // 确定窃取任务数量：目标本地任务队列 taskq 中任务总数的一半
     int stealNum = stealFrom->taskq->size() / 2;
-    // 如果可窃取任务数为 0，则直接返回
     if (stealNum <= 0){
         return;
     }
 
-    // 针对拟塞入任务的线程加写锁，使得窃取行为和任务提交行为发生隔离，防止死锁
+    // 针对 thread:stealTo 加写锁，防止因 workstealing 和 submit 行为并发，导致线程因 taskq 容量溢出而发生死锁
     rwlock::lockGuard guard(stealTo->lock);
-
-    // 如果此时目标任务队列容量不够，则不作窃取直接返回
+    // 检查此时 stealTo 中的 taskq 如果剩余容量已不足以承载拟窃取的任务量，则直接退出
     if (stealTo->taskq->size() + stealNum > stealTo->taskq->cap()){
         return;
     }
 
-    // 创建承载窃取任务的容器
+    // 创建任务容器，以非阻塞模式从 stealFrom 的 taskq 中窃取指定数量的任务
     std::vector<task> containers(stealNum);
-    // 以非阻塞模式窃取指定数量的任务
     if (!stealFrom->taskq->readN(containers,true)){
         return;
     }
 
-    // 以阻塞模式，将窃取到的任务添加到目标队列中
-    stealTo->taskq->writeN(containers);
+    // 将窃取到的任务添加到 stealTo 的 taskq 中
+    stealTo->taskq->writeN(containers,false);
 }
 
-// 随机获取本线程之外的一个线程作为拟窃取的目标线程
+// 随机选择本 thread 外的一个 thread 作为窃取的目标
 WorkerPool::thread::ptr WorkerPool::getStealingTarget(){
-    // 如果线程池长度不足，直接返回空
+    // 如果线程池长度不足 2，直接返回
     if (this->m_threadPool.size()< 2){
         return nullptr;
     }
 
-    // 获取本线程的 index
+    // 通过随机数，获取本 thread 之外的一个目标 thread index
     int threadIndex = WorkerPool::getThreadIndex();
-    // 通过随机数获取拟窃取目标线程 index，要求其不等于当前线程 index
     int targetIndex = rand() % this->m_threadPool.size();
     while ( targetIndex == threadIndex){
         targetIndex = rand() % this->m_threadPool.size();
     }
 
+    // 返回目标 thread
     return this->m_threadPool[targetIndex];
 }
 
@@ -249,9 +311,7 @@ const std::string WorkerPool::getThreadNameByIndex(int index){
 // 获取当前线程的线程名
 const std::string WorkerPool::getThreadName(){
     sync::Thread* curThread = sync::Thread::GetThis();
-    if (!curThread){   
-        throw std::exception();
-    }
+    CBRICKS_ASSERT(curThread != nullptr, "get current thread fail");
 
     return curThread->getName();
 }
