@@ -180,27 +180,33 @@ void testChannel(){
 }
 
 void testWorkerPool(){
+    // 协程调度框架类型别名定义
     typedef cbricks::pool::WorkerPool workerPool;
-    workerPool::ptr workerPoolPtr(new workerPool(8));  
-
-    typedef cbricks::sync::Lock lock;
+    // 信号量类型别名定义
     typedef cbricks::sync::Semaphore semaphore;
 
+    // 初始化协程调度框架，设置并发的 threads 数量为 8
+    workerPool::ptr workerPoolPtr(new workerPool(8));  
+
+    // 初始化一个原子计数器
     std::atomic<int> cnt{0};
-    lock mutex;
+    // 初始化一个信号量实例
     semaphore sem;
 
+    // 投递 10000 个异步任务到协程调度框架中，执行逻辑就是对 cnt 加 1
     for (int i = 0; i < 10000; i++){
-        workerPoolPtr->submit([&cnt,&mutex,&sem](){
+        workerPoolPtr->submit([&cnt,&sem](){
             cnt++;
             sem.notify();
         });
     }
 
+    // 通过信号量等待 10000 个异步任务执行完成
     for (int i = 0; i < 10000; i++){
         sem.wait();
     }
 
+    // 输出 cnt 结果（预期结果为 10000）
     std::cout << cnt << std::endl;
 }
 
