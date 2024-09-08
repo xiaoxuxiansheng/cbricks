@@ -17,6 +17,7 @@
 #include "base/defer.h"
 #include "trace/assert.h"
 #include "log/log.h"
+#include "mysql/conn.h"
 
 
 
@@ -223,6 +224,10 @@ void testLog(){
     }
 
     sleep(1);
+}
+
+void testMysql(){
+    cbricks::mysql::Conn conn;
 }
 
 int main(int argc, char** argv){
