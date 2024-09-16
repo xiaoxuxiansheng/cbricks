@@ -4,6 +4,12 @@
 #include <exception>
 #include <time.h>
 #include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <cstring>
 
 
 #include "sync/lock.h"
@@ -13,11 +19,12 @@
 #include "sync/channel.h"
 #include "sync/sem.h"
 #include "pool/workerpool.h"
+#include "server/server.h"
 #include "base/sys.h"
 #include "base/defer.h"
 #include "trace/assert.h"
 #include "log/log.h"
-#include "mysql/conn.h"
+// #include "mysql/conn.h"
 
 
 
@@ -216,9 +223,7 @@ void testAssert(){
 }
 
 void testLog(){
-    typedef cbricks::log::Logger logger;
-    logger& l = logger::GetInstance();
-    l.Init("output/cbricks.log",50);
+    cbricks::log::Logger::Init("output/cbricks.log",50);
     for (int i = 0; i < 1000; i++){
         LOG_INFO("test case: %d",i);
     }
@@ -226,17 +231,157 @@ void testLog(){
     sleep(1);
 }
 
-void testMysql(){
-    cbricks::mysql::Conn conn;
+// void testMysql(){
+//     cbricks::mysql::Conn conn;
+// }
+
+static const int PORT = 8080;
+
+void testClient();
+
+void testServer(){
+    typedef cbricks::server::Server server;
+    typedef cbricks::sync::Semaphore semaphore;
+    typedef cbricks::sync::Thread thread;
+
+    // 初始化日志模块
+    cbricks::log::Logger::Init("output/cbricks.log",2000);
+    // 信号量
+    semaphore sem;
+    // s.serve();
+
+    // 异步启动 server
+    thread t([&sem](){
+        server s;
+        std::function<std::string (std::string&)> cb = [](std::string& data)-> std::string{
+            LOG_INFO("handle request: %s",data);
+            return "success";
+        };
+        s.init(PORT,cb);
+        s.serve();
+        LOG_INFO("serve stop");
+        sem.notify();
+    });
+
+    // // 睡 2秒确保 server 启动
+    sleep(2);
+
+    // 启动 n 个 client
+    int n = 1000;
+    for (int i = 0; i < n; i++){
+        // 客户端并发请求
+        thread client([&sem](){
+            testClient();
+            sem.notify();
+        });
+    }
+
+    // 等待所有客户端线程退出
+    for (int i = 0; i < n + 1; i++){
+        sem.wait();
+    }
+
+    sleep(2);
 }
+
+void testClient(){
+    // 初始化客户端 socket
+    int clientSocket = socket(AF_INET,SOCK_STREAM,0);
+
+    CBRICKS_ASSERT(clientSocket > 0,"init client socket failed");
+
+    // 服务端 地址
+    sockaddr_in serverAddr;
+    std::memset(&serverAddr,0,sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(PORT);
+    serverAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+    // 连接到服务器
+    int ret = connect(clientSocket,(sockaddr*)&serverAddr,sizeof(serverAddr));
+    // LOG_INFO("ret: %d, errno: %d",ret,errno);
+    CBRICKS_ASSERT(ret ==  0,"connect server fail");
+
+    // 发送请求
+    std::string msg = "hello  request";
+    send(clientSocket,msg.c_str(),msg.size(),0);
+
+    // 接收响应
+    char buffer[1024];
+    std::memset(buffer,0,1024);
+    int read = recv(clientSocket,buffer,1024,0);
+    CBRICKS_ASSERT(read >  0,"client recv fail");
+
+    std::string res(buffer,read);
+    CBRICKS_ASSERT(res == "success","invalid response");
+    close(clientSocket);
+}
+
+int testFc(){
+    std::function<void(int)> f1 = [](int a){
+        std::cout<<"test" << a <<std::endl;
+    };
+    // f1.operator()
+    // // void(f2*)(int) = f1.;
+    // f2(3);
+}
+
+void testSignal(){
+    cbricks::base::AddSignal(SIGINT,[](int sig){
+        std::cout << "capture sig: "<< sig << std::endl;
+        std::exit(0);
+    });
+    cbricks::base::AddSignal(SIGHUP,[](int sig){
+        std::cout << "capture sig: "<< sig << std::endl;
+        std::exit(0);
+    });
+    cbricks::base::AddSignal(SIGTERM,[](int sig){
+        std::cout << "capture sig: "<< sig << std::endl;
+        std::exit(0);
+    });
+    cbricks::base::AddSignal(SIGKILL,[](int sig){
+        std::cout << "capture sig: "<< sig << std::endl;
+        std::exit(0);
+    });
+    cbricks::base::AddSignal(SIGQUIT,[](int sig){
+        std::cout << "capture sig: "<< sig << std::endl;
+        std::exit(0);
+    });
+    while(true){
+        
+    }
+}
+
+// void handle_sigint(int sig) {
+//     std::cout << "Caught SIGINT, signal number = " << sig << std::endl;
+//     // 可以在这里写入清理代码，例如释放资源等
+//     std::exit(0);
+// }
+ 
+// int main() {
+//     struct sigaction sa;
+//     sa.sa_handler = &handle_sigint;
+//     sigemptyset(&sa.sa_mask);
+//     sa.sa_flags = 0;
+//     sigaction(SIGINT, &sa, NULL);
+ 
+//     while (true) {
+//         sleep(1); // 用来模拟程序的运行，实际使用时可以替换为需要的代码
+//     }
+ 
+//     return 0;
+// }
 
 int main(int argc, char** argv){
     // testThread();
     // testCoroutine();
     // testLinkedList();
     // testChannel();
-    testWorkerPool();
+    // testWorkerPool();
     // testAssert();
     // testLog();
+    testServer();
+    // testFc();
+    // testSignal();
 }
 

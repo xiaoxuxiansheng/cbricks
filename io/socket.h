@@ -1,33 +1,37 @@
 #pragma once 
 
 #include <memory>
-#include <atomic>
 
 #include "fd.h"
 #include "../sync/lock.h"
 
-namespace cbricks
-{
-namespace io
-{
+namespace cbricks{namespace io{
 
+/**
+ * socketFd 继承 fd
+ */
 class SocketFd : public Fd{
 public:
+    // 智能指针别名
     typedef std::shared_ptr<SocketFd> ptr;
+    // 互斥锁
     typedef sync::Lock lock;
 public:
-    // 创建 socket fd
+    /** 构造/析构函数 */
     SocketFd();
+    ~SocketFd() override = default;
 
+public:
     // 绑定指定端口并开始监听
     void bindAndListen(int port);
 
 private:
-    std::atomic<int>m_port{0};
+    // 监听的端口
+    int m_port;
+    // 互斥锁
     lock m_lock;
 };
 
 
-} 
-} // namespace cbricksnamespace io
+}} // namespace cbricksnamespace io
 

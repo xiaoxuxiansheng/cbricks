@@ -5,70 +5,96 @@
 
 namespace cbricks{namespace io{
 
-const int MAX_EPOLL_EVENT_NUM = 10000; //最大事件数
-
-// 构造函数
-EpollFd::EpollFd(int size) : Fd(epoll_create(size)){}
-
-// 析构函数
-EpollFd::~EpollFd(){
-    this->m_closed.store(true);
-    Fd::~Fd();
+// 构造函数. 调用 epollCreate 完成 epollFd 创建
+EpollFd::EpollFd(int size) : Fd(epoll_create(size)),m_size(size){
+    CBRICKS_ASSERT(this->m_size > 0, "epoll create with nonpositive size");
 }
 
-// 注册指定 fd 的读事件
-void EpollFd::addEvent(Fd::ptr fd, EventType eType){
-    CBRICKS_ASSERT(!this->m_closed.load(), "add event in closed epollfd");
-    CBRICKS_ASSERT(eType == Read || eType == Write, "add invalid event");
-
+// 注册针对 fd 的指定事件
+void EpollFd::add(Fd::ptr fd, EventType eType, const bool oneshot){
     int targetFd = fd->get();
-    CBRICKS_ASSERT(targetFd > 0, "epoll fd add read event with nonpositive fd");
-    
+    CBRICKS_ASSERT(targetFd > 0, "epoll fd add event with nonpositive fd");
+
+    // 将 fd 设置为非阻塞模式
+    fd->setNonblocking(); 
+
     epoll_event e;
     e.data.fd = targetFd;
     
+    /**
+     * 监听的事件类型. 统一采用 oneshot 和 et 模式
+     * et——edge trigger mode：当有就绪事件到达时，必须一次性将数据处理干净
+     * oneshot——：fd 就绪事件到达后只能被一个线程所处理，直到再次重置 EPOLLONESHOT 标识
+     */
+    if (eType == Read){
+        e.events = EPOLLIN | EPOLLET | EPOLLRDHUP;
+    }else{
+        e.events = EPOLLOUT | EPOLLET | EPOLLRDHUP;
+    }
+
+    if (oneshot){
+        e.events = e.events | EPOLLONESHOT;
+    }
+    
+    // 将 fd 以及关注的事件注册到 epoll fd 中
+    int ret = epoll_ctl(this->m_fd,EPOLL_CTL_ADD,targetFd,&e);
+    CBRICKS_ASSERT(ret == 0, "epoll ctl failed"); 
+}
+
+// 针对 fd 修改监听事件
+void EpollFd::modify(Fd::ptr fd, EventType eType, const bool oneshot){
+    int targetFd = fd->get();
+    CBRICKS_ASSERT(targetFd > 0, "epoll fd modify event with nonpositive fd");
+
+    epoll_event e;
+    e.data.fd = targetFd;
+    
+    /**
+     * 监听的事件类型. 统一采用 oneshot 和 et 模式
+     * et——edge trigger mode：当有就绪事件到达时，必须一次性将数据处理干净
+     * oneshot——：fd 就绪事件到达后只能被一个线程所处理，直到再次重置 EPOLLONESHOT 标识
+     */
     if (eType == Read){
         e.events = EPOLLIN | EPOLLET | EPOLLRDHUP; 
     }else{
         e.events = EPOLLOUT | EPOLLET | EPOLLRDHUP; 
     }
 
-    // 将 fd 设置为非阻塞模式
-    fd->setNonblocking(); 
-    
+    if (oneshot){
+        e.events = e.events | EPOLLONESHOT;
+    }
+
     // 将 fd 以及关注的事件注册到 epoll fd 中
-    int ret = epoll_ctl(this->m_fd,EPOLL_CTL_ADD,targetFd,&e);
+    int ret = epoll_ctl(this->m_fd,EPOLL_CTL_MOD,targetFd,&e);
     CBRICKS_ASSERT(ret == 0, "epoll ctl failed"); 
-
-    // fd 添加到池子中
-    lock::lockGuard guard(this->m_lock);
-    // 不存在即插入，存在即忽略
-    this->m_fds.insert({targetFd,fd});
 }
 
-// 移除指定 fd 
+// 从 epoll 事件表中移除指定 fd
 void EpollFd::remove(int fd){
-    CBRICKS_ASSERT(!this->m_closed.load(), "remove fd in closed epollfd");
     epoll_ctl(this->m_fd,EPOLL_CTL_DEL,fd,0);
-    // 从池子中移除
-    lock::lockGuard guard(this->m_lock);
-    this->m_fds.erase(fd);   
 }
 
-// 等待事件到达
-std::vector<EpollFd::Event> EpollFd::wait(){
-    epoll_event rawEvents[MAX_EPOLL_EVENT_NUM];
-    int ret = epoll_wait(this->m_fd, rawEvents, MAX_EPOLL_EVENT_NUM, -1);
+// 等待监听事件的到达
+std::vector<EpollFd::Event::ptr> EpollFd::wait(const int timeoutMilis){
+    std::vector<EpollFd::Event::ptr> events;
+    epoll_event rawEvents[this->m_size];
+    int ret = epoll_wait(this->m_fd, rawEvents, this->m_size, timeoutMilis);
     
-    std::vector<EpollFd::Event> events;
+    // 操作被中断，需要重新处理
     if (errno == EINTR){
         return events;
     }
 
-    CBRICKS_ASSERT(ret >= 0, "epoll wait fail");
+    // 没有获取到就绪事件
+    if (!ret){
+        return events;
+    }
+
+    CBRICKS_ASSERT(ret > 0, "epoll wait fail");
     
+    events.reserve(ret);
     for (int i = 0; i < ret; i++){
-        events.push_back(Event(rawEvents[i].data.fd,rawEvents[i].events));
+        events.emplace_back(new Event(rawEvents[i].data.fd,rawEvents[i].events));
     }
 
     return events;

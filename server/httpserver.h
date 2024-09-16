@@ -1,10 +1,10 @@
 #pragma once 
 
-#include "epollserver.h"
+#include "server.h"
 
 namespace cbricks{namespace server{
 
-class HttpServer : public EpollServer{
+class HttpServer : public Server{
     
 
 };

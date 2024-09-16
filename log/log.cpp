@@ -162,6 +162,7 @@ void Logger::asyncWriteLog(){
         instance.asyncWriteLogPreprocess();
         // 将日志数据写入到文件
         fputs(logItem.c_str(),instance.m_file);
+        fflush(instance.m_file);
         instance.m_cnt++;
     }
 
