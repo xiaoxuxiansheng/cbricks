@@ -14,7 +14,7 @@ namespace cbricks{namespace io{
  * - socket：创建 socket 套接字实例
  *   - param1：地址族，指定地址类型；param2：指定套接字类型；param3：指定协议类型
  */
-SocketFd::SocketFd():Fd(socket(AF_INET,SOCK_STREAM,0)),m_port(0){
+SocketFd::SocketFd():Fd(socket(AF_INET,SOCK_STREAM,IPPROTO_TCP)),m_port(0){
     linger tmp = {1,1};
     /**
      * setsockopt 设置套接字配置项：
