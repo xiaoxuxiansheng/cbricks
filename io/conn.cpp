@@ -21,12 +21,12 @@ void ConnFd::readFd(){
     char readBuf[READ_BUF_SIZE];
     while (true){
         /**
-         * recv： 从 fd 中读取数据
-         *  - param1：fd 句柄
-         *  - param2：存放接收数据的缓冲区
-         *  - param3：缓冲区长度
-         *  - param4：0——非阻塞操作
-         *  - response：读取到的字节数
+         * @brief:recv： 从 fd 中读取数据
+         *  - @param：1)fd 句柄
+         *  - @param：2)存放接收数据的缓冲区
+         *  - @param：3)缓冲区长度
+         *  - @param：4)0——非阻塞操作
+         *  - @return ：读取到的字节数
          */
         // 从 fd 中读取数据
         int read = recv(this->m_fd, readBuf, READ_BUF_SIZE, 0);
@@ -55,10 +55,10 @@ void ConnFd::writeFd(){
     iv.iov_base = const_cast<char*>(this->m_writeBuf.c_str());
     iv.iov_len = this->m_writeBuf.size();
     /**
-     * writev：向指定 fd 中写入数据
-     *  - param1：fd 句柄
-     *  - param2：iovec 结构体指针. iovec 标识一个缓冲区的地址和长度
-     *  - param3: iovec 结构体的数量
+     * @brief:writev：向指定 fd 中写入数据
+     *  - @param：1)fd 句柄
+     *  - @param：2)iovec 结构体指针. iovec 标识一个缓冲区的地址和长度
+     *  - @param: 3)iovec 结构体的数量
      */
     writev(this->m_fd,&iv,1);
 }

@@ -55,9 +55,9 @@ public:
     typedef io::PipeFd pipe;
 
     /**
-     * callback：回调函数 类型别名
-     *   - param——请求数据
-     *   - response——给予的响应数据
+     * @brief:callback：回调函数 类型别名
+     *   - @param:——请求数据
+     *   - @return:——给予的响应数据
      */
     typedef std::function< std::string( std::string& )> callback;
     // 函数栈回收前执行的 defer 函数 类型别名
@@ -72,11 +72,11 @@ public:
     // 默认最大同时处理的事件数，用于初始化 epoll 池作为其容量
     static const int MAX_REQUEST = 8192;
     /**
-     * 初始化 server
-     *  - port：启动的端口号
-     *  - cb：当有请求到达后的处理函数 
-     *  - threads：启动的线程数
-     *  - maxRequest：最大同时处理的事件数
+     * @brief: server
+     *  - @param:port：启动的端口号
+     *  - @param:cb：当有请求到达后的处理函数 
+     *  - @param:threads：启动的线程数
+     *  - @param:maxRequest：最大同时处理的事件数
      */
     void init(int port, callback cb, const int threads = 8, int maxRequest = MAX_REQUEST);
 
@@ -89,7 +89,7 @@ private:
     // 运行中
     void serving();
     // 处理到达的就绪事件
-    bool eventLoop(event::ptr e);
+    bool process(event::ptr e);
     // 处理到达的信号量
     bool processSignal();
     // 处理到达的客户端连接
@@ -104,7 +104,7 @@ private:
     void freeConn(int _fd);
 
 private:
-    // 初始化管道 pipe
+    // 静态方法：初始化管道 pipe
     static void pipePrepare();
 
 private:
@@ -131,9 +131,9 @@ private:
     std::unordered_map<int,conn::ptr> m_conns;
 
 private:
-    // 单例工具，保证 s_pipe 仅被初始化一次
+    // 静态变量：单例工具，保证 s_pipe 仅被初始化一次
     static once s_once;
-    // 基于 pipe 实现优雅关闭. pipe 为静态变量，全局共享.
+    // 静态变量：基于 pipe 实现优雅关闭. pipe 为静态变量，全局共享.
     static pipe::ptr s_pipe;
 };
 

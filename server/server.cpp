@@ -9,7 +9,11 @@
 
 namespace cbricks{namespace server{ 
 
-// 类静态变量声明.
+/**
+ *  类静态变量声明
+ *     - s_once: 单例工具
+ *     - s_pipe: 管道 fd
+ */
 Server::once Server::s_once;
 Server::pipe::ptr Server::s_pipe;
 
@@ -43,6 +47,7 @@ void Server::init(int port, callback cb, const int threads, const int maxRequest
     this->m_maxRequest = maxRequest;
     this->m_workerPool.reset(new workerPool(threads));
 
+    // 设置 init 完成标识
     this->m_initialized.store(true);
 }
 
@@ -54,16 +59,17 @@ void Server::serve(){
         CBRICKS_ASSERT(this->m_initialized.load(), "serve without initialize");
         // 确保未重复执行启动操作
         CBRICKS_ASSERT(!this->m_serving.load(), "repeat serve");
+        // 设置 server 启动标识
         this->m_serving.store(true);
     } 
 
     /**
-     * 前处理：
-     * - 创建 socketFd (socket 操作)
-     * - 创建 epollFd （epoll_create 操作）
-     * - socketFd 添加到 epollFd 中（epoll_ctl 操作）
-     * - 创建 pipeFd （socketPair）
-     * - pipeFd 读取端添加到 epollF 中（epoll_ctl 操作）
+     * @brief: 前处理：
+     * - 1）创建 socketFd (socket 操作)
+     * - 2）创建 epollFd （epoll_create 操作）
+     * - 3）socketFd 添加到 epollFd 中（epoll_ctl 操作）
+     * - 4）创建 pipeFd （socketPair）——全局只会执行一次
+     * - 5）pipeFd 读取端添加到 epollF 中（epoll_ctl 操作）
      */
     this->prepare();
 
@@ -85,18 +91,18 @@ void Server::prepare(){
     socket* s = new socket;
     s->bindAndListen(this->m_port);
     this->m_socket.reset(s);
+
     // 注册监听针对 socket 的读就绪事件
     this->m_epoll->add(this->m_socket,epoll::Read); 
 }
 
 // 运行 server
 void Server::serving(){
-    // loop + io 多路复用模型
+    // event loop + io 多路复用模型
     while(true){
-        // LOG_INFO("epoll server serving...");
         // 阻塞等待监听，直到 epoll 事件表中有就绪事件到达
         std::vector<event::ptr> es = this->m_epoll->wait();
-        // LOG_INFO("get epoll event num: %d",es.size());
+
         if (!es.size() && errno != EINTR){
             LOG_ERROR("epoll fail, errno: %d",errno);
             return;
@@ -104,7 +110,7 @@ void Server::serving(){
 
         // 分发处理到达的就绪事件
         for (int i = 0; i < es.size(); i++){
-            bool pass = this->eventLoop(es[i]);
+            bool pass = this->process(es[i]);
             if (!pass){
                 return;
             }
@@ -113,14 +119,13 @@ void Server::serving(){
 }
 
 /**
- * 分发处理到达的事件：
+ * @brief:分发处理到达的事件：
  *    1) 异常错误
  *    2）到达的客户端连接
  *    3）conn fd 读操作就绪
  *    4）conn fd 写操作就绪
  */
-bool Server::eventLoop(event::ptr e){
-    // LOG_INFO("handle epoll event, fd: %d, events: %d",e->fd,e->events);
+bool Server::process(event::ptr e){
     // 处理信号
     if (e->fd == Server::s_pipe->getRecvFd()->get()){
         return (!e->readable()) || this->processSignal();
@@ -222,7 +227,7 @@ void Server::spawnConn(){
 }
 
 /**
- * 读操作就绪时执行该函数：
+ * @brief:读操作就绪时执行该函数：
  *  1 从 fd 中读取全量数据写入到 conn 读缓冲区
  *  2 从 conn 读缓冲区中获取全量数据
  *  3 调用 callback 函数执行业务逻辑
@@ -251,12 +256,10 @@ void Server::processRead(int _fd){
          * 4 获取 conn 读缓冲区数据
          */
         std::string& requestBody = connFd->readFromBuf();
-        // LOG_INFO("get request data: %s, fd: %d",requestBody, connFd->get());
         /**
          * 5 执行用户注入的 callback 函数
          */
         std::string responseBody = this->m_cb(requestBody);
-        // LOG_INFO("get response data: %s, fd: %d",responseBody, connFd->get());
         /**
          * 6 执行结果写入到 conn 写缓冲区
          */
@@ -271,7 +274,7 @@ void Server::processRead(int _fd){
 }
 
 /**
- * 写操作就绪后执行相应写动作：
+ * @brief:写操作就绪后执行相应写动作：
  *    1 将 conn 写缓冲区中数据写入 fd
  *    2 释放对应的 conn
  */

@@ -7,7 +7,7 @@
 
 namespace cbricks{ namespace io{
 
-/** 构造/析构 */    
+/** 构造函数 */    
 PipeFd::PipeFd(){
     int pipe[2];
     int ret = socketpair(PF_UNIX, SOCK_STREAM, 0, pipe);
@@ -16,26 +16,25 @@ PipeFd::PipeFd(){
     this->m_pipe[1].reset(new Fd(pipe[1]));
 }
 
-// 获取读取端
+// 获取读取端 fd
 const Fd::ptr PipeFd::getRecvFd() const{
     return this->m_pipe[0];
 }
 
-// 获取写入端
+// 获取写入端 fd
 const Fd::ptr PipeFd::getSendFd() const{
     return this->m_pipe[1];
 }
 
-// 设置为非阻塞模式
+// 将 pipe 设置为非阻塞模式
 void PipeFd::setNonblocking(){
     this->m_pipe[0]->setNonblocking();
     this->m_pipe[1]->setNonblocking();
 }
 
+// 向写入端发送信号
 void PipeFd::sendSig(int sig){
     send(this->m_pipe[1]->get(),(char*)&sig,1,0);
 }
-
-
 
 }}

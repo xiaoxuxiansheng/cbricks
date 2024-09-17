@@ -1,5 +1,3 @@
-#include <sys/epoll.h>
-
 #include "epoll.h" 
 #include "../trace/assert.h" 
 
@@ -24,7 +22,7 @@ void EpollFd::add(Fd::ptr fd, EventType eType, const bool oneshot){
     /**
      * 监听的事件类型. 统一采用 oneshot 和 et 模式
      * et——edge trigger mode：当有就绪事件到达时，必须一次性将数据处理干净
-     * oneshot——：fd 就绪事件到达后只能被一个线程所处理，直到再次重置 EPOLLONESHOT 标识
+     * oneshot：fd 就绪事件到达后只能被一个线程所处理，直到再次重置 EPOLLONESHOT 标识
      */
     if (eType == Read){
         e.events = EPOLLIN | EPOLLET | EPOLLRDHUP;

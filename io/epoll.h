@@ -18,6 +18,7 @@ public:
     /** 构造与析构函数 */
     // 构造函数 size——epoll事件表中可添加的最大 fd 数量
     explicit EpollFd(int size);
+    // 默认析构函数，调用父类 fd 析构完成句柄关闭即可
     ~EpollFd() override = default;
     
 public:
@@ -42,29 +43,35 @@ public:
         int fd;
         // 构造函数
         Event(int fd, uint32_t events):fd(fd),events(events){}
+        // 是否发生中断或者错误
         bool hupOrErr(){
             return this->events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR);
         }
-        // 读就绪
+        // 是否存在读就绪事件
         const bool readable()const{
             return this->events & EPOLLIN;
         }
-        // 写就绪
+        // 是否存在写就绪事件
         const bool writable()const{
             return this->events & EPOLLOUT;
         }
     };
 
-    // 添加 fd 并注册事件
+    // 添加 fd 并注册监听的事件
     void add(Fd::ptr fd, EventType eType, const bool oneshot = true);
-    // 针对 fd 修改监听事件
+    // 针对 fd 修改对其监听的事件
     void modify(Fd::ptr fd, EventType eType, const bool oneshot = true);
     // 移除 fd 
     void remove(int fd);    
-    // 等待并获取到达的事件. timeout：-1——阻塞模式 0——非阻塞模式 >0——指定毫秒作为超时时间
+    /**
+     * @brief：等待并获取到达的事件
+     * @param[in]：timeoutMilis：-1——阻塞模式 0——非阻塞模式 >0——指定毫秒作为超时时间
+     * @return：返回就绪事件列表
+     */
     std::vector<Event::ptr> wait(const int timeoutMilis = -1);
 
 private:
+    // epoll 事件表容量
     int m_size;
 };
 

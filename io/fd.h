@@ -6,11 +6,11 @@
 
 namespace cbricks{ namespace io{
 /**
- * file descriptor 文件句柄
+ * file descriptor 文件句柄. 禁止值拷贝和值传递
  */
 class Fd : base::Noncopyable{
 public:
-    // 智能指针别名
+    // 智能指针 类型别名
     typedef std::shared_ptr<Fd> ptr;
 
 public:

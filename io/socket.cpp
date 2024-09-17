@@ -1,5 +1,6 @@
-// socket 相关方法
+// 提供 socket 相关方法——socket、bind、listen
 #include <sys/socket.h>
+// 提供 htonl、htons 方法
 #include <netinet/in.h>
 // 提供 bzero 方法
 #include <strings.h>
@@ -17,12 +18,12 @@ namespace cbricks{namespace io{
 SocketFd::SocketFd():Fd(socket(AF_INET,SOCK_STREAM,IPPROTO_TCP)),m_port(0){
     linger tmp = {1,1};
     /**
-     * setsockopt 设置套接字配置项：
-     *   - param1：socket fd 句柄
-     *   - param2：协议层. SOL_SOCKET 为基本套接字
-     *   - param3：选项名
-     *   - param4：指向选项值的指针
-     *   - param5：选项值的长度
+     * @brief：setsockopt 设置套接字配置项：
+     * @param：1）socket fd 句柄
+     * @param：2）协议层. SOL_SOCKET 为基本套接字
+     * @param：3）选项名
+     * @param：4）指向选项值的指针
+     * @param：5）选项值的长度
      */
     setsockopt(this->m_fd,SOL_SOCKET,SO_LINGER,&tmp,sizeof(tmp));
 }
@@ -64,9 +65,9 @@ void SocketFd::bindAndListen(int port){
     CBRICKS_ASSERT(ret >= 0, "bind socket fd fail");
 
     /**
-     * listen：监听 socket fd，后续能够通过 accpet 接收来自客户端的连接
-     *   - param1：socket fd
-     *   - param2：挂起连接队列的最大长度
+     * @brief:listen：监听 socket fd，后续能够通过 accpet 接收来自客户端的连接
+     * @param：1)socket fd
+     * @param：2)挂起连接队列的最大长度
      */
     ret = listen(this->m_fd, SOMAXCONN);
     CBRICKS_ASSERT(ret >= 0, "listen socket fd fail");
