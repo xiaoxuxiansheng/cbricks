@@ -81,7 +81,7 @@ public:
     void init(int port, callback cb, const int threads = 8, int maxRequest = MAX_REQUEST);
 
     // 运行 server. 要求必须先完成过初始化
-    void serve();
+    virtual void serve();
 
 private:
     // 运行前处理

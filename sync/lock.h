@@ -54,6 +54,9 @@ private:
 
 class SpinLock :base::Noncopyable{
 public:
+    typedef ScopedLock<SpinLock> lockGuard;
+
+public:
     SpinLock();
 
 public:
