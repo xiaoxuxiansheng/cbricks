@@ -10,6 +10,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <cstring>
+#include <memory>
 
 
 #include "sync/lock.h"
@@ -18,6 +19,7 @@
 #include "sync/queue.h"
 #include "sync/channel.h"
 #include "sync/sem.h"
+#include "pool/instancepool.h"
 #include "pool/workerpool.h"
 #include "server/server.h"
 #include "base/sys.h"
@@ -372,6 +374,74 @@ void testSignal(){
 //     return 0;
 // }
 
+
+
+class demo : public cbricks::pool::Instance{
+static cbricks::sync::Lock s_lock;
+static std::atomic<int> s_index;
+
+public:
+    demo(){
+        s_lock.lock();
+        this->m_index = s_index;
+        s_index++;
+        s_lock.unlock();
+    }
+
+    ~demo(){
+         LOG_INFO("destruct..., index: %d",this->m_index);
+    }
+
+    void clear() override{
+        LOG_INFO("clear..., index: %d",this->m_index);
+    }
+
+    void print(){
+        LOG_INFO("print..., index: %d",this->m_index);      
+    }
+
+private:
+    int m_index;
+};
+
+cbricks::sync::Lock demo::s_lock;
+std::atomic<int> demo::s_index{0};
+
+void testInstancePool(){
+    typedef cbricks::pool::Instance instance;
+    typedef cbricks::pool::InstancePool instancePool;
+    typedef cbricks::sync::Semaphore semaphore;
+    typedef cbricks::sync::Thread thread;
+
+    cbricks::log::Logger::Init("output/cbricks.log",5000);
+
+    instancePool pool([]()->instance::ptr{
+        return instance::ptr(new demo);
+    });
+
+
+    semaphore sem;
+    int cnt = 10000;
+    for (int i = 0; i < cnt; i++){
+        thread thr([&pool,&sem](){
+            instance::ptr inst = pool.get();
+            std::shared_ptr<demo> d = std::dynamic_pointer_cast<demo>(inst);
+            if (d){
+                d->print();
+            }
+            pool.put(d);
+            sem.notify();
+        });
+    }
+
+    for (int i = 0; i < cnt; i++){
+        sem.wait();
+    }
+
+    std::this_thread::sleep_for(std::chrono::seconds(4));
+
+}
+
 int main(int argc, char** argv){
     // testThread();
     // testCoroutine();
@@ -380,8 +450,9 @@ int main(int argc, char** argv){
     // testWorkerPool();
     // testAssert();
     // testLog();
-    testServer();
+    // testServer();
     // testFc();
     // testSignal();
+    testInstancePool();
 }
 

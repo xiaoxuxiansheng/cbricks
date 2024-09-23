@@ -11,7 +11,7 @@ namespace cbricks{namespace pool{
  * @param：level——资源粒度分级，默认分成 8 份
  * @param：expDuration——过期回收时间，表示 instance 在对象池中闲置多长时间后会被自动回收
 */
-InstancePool::InstancePool(constructF _constructF, const int level, const ms expDuration):m_constructF(_constructF){
+InstancePool::InstancePool(constructF _constructF, const int level, const ms expDuration):m_constructF(_constructF),m_levelSize(level){
     CBRICKS_ASSERT(_constructF != nullptr, "constructor is empty");
     CBRICKS_ASSERT(level > 0, "level is nonpositive");
     CBRICKS_ASSERT(expDuration.count(), "expDuration is nonpositive");
@@ -43,7 +43,7 @@ InstancePool::~InstancePool(){
 
 /**
  * @brief: 从 instance pool 中获取一个 instance 实例：
- * - 0）根据 level 递增计数器，分配得到一个 level
+ *  - 0）根据 level 递增计数器，分配得到一个 level
  * - 针对 m_local 操作：
  *  - 1）根据 level 获取对应的 levelPool
  *  - 2）尝试获取当前 levelPool 的 private instance（ 加 level 粒度 spinLock，只有同 level 下的 get 和 put 行为会发生竞争 ）
@@ -58,11 +58,11 @@ InstancePool::~InstancePool(){
  *  - 10）使用 newFc 构造出新实例
  * @return: 返回获取到的实例
  */
-Instance* InstancePool::get(){
+Instance::ptr InstancePool::get(){
     // 获取 level 层级
-    int level = this->m_level++;
+    int level = (this->m_level++)%this->m_levelSize;
     // 从 m_local 中获取
-    Instance* got = this->getFromPool(this->m_local,level);
+    Instance::ptr got = this->getFromPool(this->m_local,level);
     if (!got){
         // 从 m_victim 中获取
         got = this->getFromPool(this->m_victim,level);
@@ -73,7 +73,7 @@ Instance* InstancePool::get(){
     }
 
     // 返回 instance 实例前进行 reset 重置
-    got->reset();
+    got->clear();
     return got;
 }
 
@@ -85,9 +85,9 @@ Instance* InstancePool::get(){
  * - 3）尝试放置到当前 levelPool 的 private 中（ 加 level 粒度 spinLock，只有同 level 下的 get 和 put 行为会发生竞争 ）
  * - 4）放置到当前 levelPool 的 shared 队列（加 level 粒度 lock，可能和任意 level 的 get 和 put 行为发生竞争）
  */
-void InstancePool::put(Instance* instance){
+void InstancePool::put(Instance::ptr instance){
     // 获取 level 层级对应的 levelPool
-    LevelPool::ptr levelPool = this->m_local[++this->m_level];
+    LevelPool::ptr levelPool = this->m_local[(this->m_level++)%this->m_levelSize];
     {
         // 加自旋锁并尝试放置到 levelPool->single
         spinLock::lockGuard guard(levelPool->singleLock);
@@ -125,7 +125,7 @@ void InstancePool::asyncEvict(){
         std::vector<LevelPool::ptr> newLocal;
         newLocal.reserve(this->m_local.size());
         for (int i = 0; i < this->m_local.size();i++){
-            this->m_local.push_back(LevelPool::ptr(new LevelPool));
+            newLocal.push_back(LevelPool::ptr(new LevelPool));
         }
 
         // 新老 m_local/m_victim 轮换
@@ -139,12 +139,12 @@ void InstancePool::asyncEvict(){
  * @param：levelPool——指定的 levelPool
  * @param：获取 instance 过程中，是否忽略 levelPool 中的 single instance 实例. 默认为 false
  */
-Instance* InstancePool::getFromLevelPool(LevelPool::ptr levelPool, bool ignoreSingle){
+Instance::ptr InstancePool::getFromLevelPool(LevelPool::ptr levelPool, bool ignoreSingle){
     // 尝试从当前 levelPool 的 single 中获取 instance 实例
     if (!ignoreSingle){
         spinLock::lockGuard guard(levelPool->singleLock);
         if (levelPool->single){
-            Instance* got = levelPool->single;
+            Instance::ptr got = levelPool->single;
             levelPool->single = nullptr;
             return got;
         }
@@ -153,7 +153,7 @@ Instance* InstancePool::getFromLevelPool(LevelPool::ptr levelPool, bool ignoreSi
     // 尝试从当前 levelPool 的 shared 中获取 instance 实例
     lock::lockGuard guard(levelPool->sharedLock);
     if (!levelPool->shared.empty()){
-        Instance* got = levelPool->shared.front();
+        Instance::ptr got = levelPool->shared.front();
         levelPool->shared.pop();
         return got;
     }   
@@ -166,9 +166,13 @@ Instance* InstancePool::getFromLevelPool(LevelPool::ptr levelPool, bool ignoreSi
  * @param：pool——m_local 或者 m_victim
  * @param：level——指定 level 层级
  */
-Instance* InstancePool::getFromPool(std::vector<LevelPool::ptr>& pool, int level){
+Instance::ptr InstancePool::getFromPool(std::vector<LevelPool::ptr>& pool, int level){
+    if (pool.empty()){
+        return nullptr;
+    }
+
     // 从当前 level 的 levelPool 中获取. 会分别尝试 single 和 shared
-    Instance* got = this->getFromLevelPool(pool[level]);
+    Instance::ptr got = this->getFromLevelPool(pool[level]);
     if (got){
         return got;
     }
@@ -186,19 +190,6 @@ Instance* InstancePool::getFromPool(std::vector<LevelPool::ptr>& pool, int level
     }
 
     return nullptr;    
-}
-
-// level pool 析构函数
-InstancePool::LevelPool::~LevelPool(){
-    if (this->single){
-        this->single->free();
-    }
-
-    while (!this->shared.empty()){
-        Instance* instance = this->shared.front();
-        instance->free();
-        this->shared.pop();
-    }
 }
 
 
