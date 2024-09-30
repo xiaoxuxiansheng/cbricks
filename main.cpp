@@ -19,6 +19,7 @@
 #include "sync/queue.h"
 #include "sync/channel.h"
 #include "sync/sem.h"
+#include "sync/map.h"
 #include "pool/instancepool.h"
 #include "pool/workerpool.h"
 #include "server/server.h"
@@ -439,7 +440,65 @@ void testInstancePool(){
     }
 
     std::this_thread::sleep_for(std::chrono::seconds(4));
+}
 
+void testSyncMap(){
+    struct demo{
+        int index;
+        demo() = default;
+        demo(int index):index(index){}
+    };
+
+    typedef cbricks::sync::Map<int,demo*> smap;
+    typedef cbricks::sync::Semaphore semaphore;
+    typedef cbricks::sync::Thread thread;
+
+    // 并发写入 10 个 key，然后正常读取
+    smap sm;
+    semaphore sem;
+    int cnt = 1000;
+    int cnt2 = 500;
+    std::atomic<int> flag1{0};
+    std::atomic<int> flag2{0};
+    std::atomic<int> flag3{0};
+
+    for (int i = 0; i < cnt; i++){
+        // 并发写 
+        thread thr1([&sm,&sem,&flag1](){
+            int index = (flag1++)/10;
+            sm.store(index,new demo(index));
+            sem.notify();
+        });
+
+        // 并发读
+        thread thr2([&sm,&sem,&flag2](){
+            int index = (flag2++)/10;
+            demo* d = nullptr;
+            sm.load(index,d);
+            sem.notify();            
+        });
+    }
+
+    for (int i = 0; i < cnt2; i++){
+        // 并发删
+        thread thr3([&sm,&sem,&flag3](){
+            int index = (flag3++)/10;
+            sm.evict(index);
+            sem.notify();            
+        });
+    }
+
+    for (int i = 0; i < 2 * cnt + cnt2; i++){
+        sem.wait();
+    }
+
+    sm.range([](const int& key, const demo* d)->bool{
+        int v = d->index;
+        std::cout << "key: " << key << " , "<< "value " << v << std::endl;
+        return true;
+    });
+
+    std::cout << "=========end=========" << std::endl;
 }
 
 int main(int argc, char** argv){
@@ -453,6 +512,6 @@ int main(int argc, char** argv){
     // testServer();
     // testFc();
     // testSignal();
-    testInstancePool();
+    testSyncMap();
 }
 
