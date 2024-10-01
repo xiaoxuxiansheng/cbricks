@@ -377,69 +377,72 @@ void testSignal(){
 
 
 
+// demo——instance 实现类
 class demo : public cbricks::pool::Instance{
-static cbricks::sync::Lock s_lock;
-static std::atomic<int> s_index;
-
 public:
-    demo(){
-        s_lock.lock();
-        this->m_index = s_index;
-        s_index++;
-        s_lock.unlock();
-    }
-
-    ~demo(){
-         LOG_INFO("destruct..., index: %d",this->m_index);
-    }
-
+    // 默认构造函数
+    demo() = default;
+    // 默认析构函数
+    ~demo() = default;
+    // [必须实现] 置空函数
     void clear() override{
-        LOG_INFO("clear..., index: %d",this->m_index);
+        LOG_INFO("clear...");
     }
-
+    // 使用方法
     void print(){
-        LOG_INFO("print..., index: %d",this->m_index);      
+        LOG_INFO("print...");      
     }
-
-private:
-    int m_index;
 };
 
-cbricks::sync::Lock demo::s_lock;
-std::atomic<int> demo::s_index{0};
-
+// 测试对象池代码示例
 void testInstancePool(){
+    // 对象实例 类型别名 
     typedef cbricks::pool::Instance instance;
+    // 对象池 类型别名
     typedef cbricks::pool::InstancePool instancePool;
+    // 信号量 类型别名
     typedef cbricks::sync::Semaphore semaphore;
+    // 线程 类型别名
     typedef cbricks::sync::Thread thread;
 
+    // 初始化日志模块，方便后续调试工作
     cbricks::log::Logger::Init("output/cbricks.log",5000);
 
+    // 初始化对象池实例，声明对象构造函数
     instancePool pool([]()->instance::ptr{
         return instance::ptr(new demo);
     });
 
-
+    // 信号量，用于作异步逻辑聚合，效果类似于 thread.join()
     semaphore sem;
+    // 并发度
     int cnt = 10000;
+    // 并发启动 thread
     for (int i = 0; i < cnt; i++){
+        // thread 实例构造
         thread thr([&pool,&sem](){
+            /**
+             * thread 执行的异步逻辑：
+             */
+            // 1）从对象池中获取对象实例
             instance::ptr inst = pool.get();
+            // 2）将对象实例转为指定类型
             std::shared_ptr<demo> d = std::dynamic_pointer_cast<demo>(inst);
+            // 3）使用对象实例
             if (d){
                 d->print();
             }
+            // 4）归还对象实例
             pool.put(d);
+            // 5）notify 信号量
             sem.notify();
         });
     }
-
+    
+    // 等待所有 thread 执行完成
     for (int i = 0; i < cnt; i++){
         sem.wait();
     }
-
-    std::this_thread::sleep_for(std::chrono::seconds(4));
 }
 
 void testSyncMap(){
@@ -512,6 +515,6 @@ int main(int argc, char** argv){
     // testServer();
     // testFc();
     // testSignal();
-    testSyncMap();
+    // testSyncMap();
 }
 

@@ -1,15 +1,25 @@
 #pragma once 
 
+// 时间相关
 #include <chrono>
+// 函数编程相关
 #include <functional>
+// 智能指针相关
 #include <memory>
+// 队列
 #include <queue>
+// 原子变量、原子操作
 #include <atomic>
 
+// 禁用类的拷贝、赋值操作
 #include "../base/nocopy.h"
+// 效仿 golang defer 机制. 利用栈内变量析构机制，保证栈回收前执行指定任务
 #include "../base/defer.h"
+// 锁相关，包含自旋锁 spinLock 互斥锁 lock
 #include "../sync/lock.h"
+// 线程相关
 #include "../sync/thread.h"
+// 信号量相关
 #include "../sync/sem.h"
 
 namespace cbricks{namespace pool{
