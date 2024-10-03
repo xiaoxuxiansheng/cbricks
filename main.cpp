@@ -27,6 +27,7 @@
 #include "base/defer.h"
 #include "trace/assert.h"
 #include "log/log.h"
+#include "memory/ptr.h"
 // #include "mysql/conn.h"
 
 
@@ -381,16 +382,16 @@ void testSignal(){
 class demo : public cbricks::pool::Instance{
 public:
     // 默认构造函数
-    demo() = default;
+    demo(){
+        LOG_INFO("construct...");
+    }
     // 默认析构函数
-    ~demo() = default;
+    ~demo() {
+       LOG_INFO("destruct...");
+    };;
     // [必须实现] 置空函数
     void clear() override{
-        LOG_INFO("clear...");
-    }
-    // 使用方法
-    void print(){
-        LOG_INFO("print...");      
+        // ...
     }
 };
 
@@ -428,13 +429,9 @@ void testInstancePool(){
             instance::ptr inst = pool.get();
             // 2）将对象实例转为指定类型
             std::shared_ptr<demo> d = std::dynamic_pointer_cast<demo>(inst);
-            // 3）使用对象实例
-            if (d){
-                d->print();
-            }
-            // 4）归还对象实例
+            // 3）归还对象实例
             pool.put(d);
-            // 5）notify 信号量
+            // 4）notify 信号量
             sem.notify();
         });
     }
@@ -443,6 +440,8 @@ void testInstancePool(){
     for (int i = 0; i < cnt; i++){
         sem.wait();
     }
+
+    std::this_thread::sleep_for(std::chrono::seconds(2));
 }
 
 void testSyncMap(){
@@ -504,6 +503,30 @@ void testSyncMap(){
     std::cout << "=========end=========" << std::endl;
 }
 
+void testSharedPtr(){
+    class demo{
+    public:
+        demo(){
+            std::cout << "construct..." << std::endl;
+        };
+
+        ~demo(){
+            std::cout << "destruct..." << std::endl;
+        }
+    };
+
+    typedef cbricks::memory::SharedPtr<demo> sharedPtr;
+
+    sharedPtr ptr(new demo);
+    std::cout << "use cnt: " << ptr.use_count() << std::endl;
+    {
+        sharedPtr ptr2 = ptr;
+        std::cout << "use cnt: " << ptr.use_count() << std::endl;
+    }
+    
+    std::cout << "use cnt: " << ptr.use_count() << std::endl;
+}
+
 int main(int argc, char** argv){
     // testThread();
     // testCoroutine();
@@ -516,5 +539,7 @@ int main(int argc, char** argv){
     // testFc();
     // testSignal();
     // testSyncMap();
+    // testInstancePool();
+    testSharedPtr();
 }
 

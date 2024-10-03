@@ -711,6 +711,9 @@ Map<Key,Value>::ReadOnly::ReadOnly(const ReadOnly& other){
 // readonly 赋值函数重载
 template<class Key, class Value>
 typename Map<Key,Value>::ReadOnly& Map<Key,Value>::ReadOnly::operator=(const ReadOnly& other){
+    if (this == &other){
+        return *this;
+    }
     this->amended = other.amended;
     this->m = other.m;
     return *this;

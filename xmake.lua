@@ -12,5 +12,6 @@ target("cbricks")
     add_files("server/*.cpp")
     add_files("sync/*.cpp")
     add_files("pool/*.cpp")
+    add_files("memory/*.cpp")
     -- add_files("mysql/*.cpp")
 
