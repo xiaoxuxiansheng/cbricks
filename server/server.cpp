@@ -45,7 +45,7 @@ void Server::init(int port, callback cb, const int threads, const int maxRequest
     this->m_cb = cb;
     this->m_port = port;
     this->m_maxRequest = maxRequest;
-    this->m_workerPool.reset(new workerPool(threads));
+    this->m_workerPool = std::make_shared<workerPool>(threads);
 
     // 设置 init 完成标识
     this->m_initialized.store(true);
@@ -84,7 +84,7 @@ void Server::prepare(){
 
     // 初始化 epoll Fd 
     this->m_epoll.reset(new epoll(this->m_maxRequest));
-    // 向 epoll 池中注册监听 pipe 读取端的读就绪事件，需要注意不为 oneshot 模式
+    // 向 epoll 池中注册监听 pipe 读取端的读就绪事件，需要注意 pipe fd 注册事件不为 oneshot 模式
     this->m_epoll->add(Server::s_pipe->getRecvFd(), epoll::Read, false);
 
     // 初始化 socket Fd，并绑定监听端口
@@ -138,7 +138,7 @@ bool Server::process(event::ptr e){
         return false;
     }
 
-    // conn Fd 发生错误，则移除
+    // conn Fd 发生错误，则移除 conn，但不终止整个 server
     if (e->hupOrErr()){
         this->freeConn(e->fd);
         return true;

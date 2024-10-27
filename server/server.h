@@ -71,12 +71,13 @@ public:
 public:
     // 默认最大同时处理的事件数，用于初始化 epoll 池作为其容量
     static const int MAX_REQUEST = 8192;
+
     /**
-     * @brief: server
-     *  - @param:port：启动的端口号
-     *  - @param:cb：当有请求到达后的处理函数 
-     *  - @param:threads：启动的线程数
-     *  - @param:maxRequest：最大同时处理的事件数
+     * @brief: 初始化 server
+     *  - @param: port：启动的端口号
+     *  - @param: cb：当有请求到达后的处理函数 
+     *  - @param: threads：启动的线程数
+     *  - @param: maxRequest：最大同时处理的事件数
      */
     void init(int port, callback cb, const int threads = 8, int maxRequest = MAX_REQUEST);
 
