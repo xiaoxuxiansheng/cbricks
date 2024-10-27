@@ -28,6 +28,7 @@
 #include "trace/assert.h"
 #include "log/log.h"
 #include "memory/ptr.h"
+#include "datastruct/radix.h"
 // #include "mysql/conn.h"
 
 
@@ -445,38 +446,32 @@ void testInstancePool(){
 }
 
 void testSyncMap(){
-    struct demo{
-        int index;
-        demo() = default;
-        demo(int index):index(index){}
-    };
-
-    typedef cbricks::sync::Map<int,demo*> smap;
+    typedef cbricks::sync::Map<int,int> smap;
     typedef cbricks::sync::Semaphore semaphore;
     typedef cbricks::sync::Thread thread;
 
     // 并发写入 10 个 key，然后正常读取
     smap sm;
     semaphore sem;
-    int cnt = 1000;
+    int cnt1 = 1000;
     int cnt2 = 500;
     std::atomic<int> flag1{0};
     std::atomic<int> flag2{0};
     std::atomic<int> flag3{0};
 
-    for (int i = 0; i < cnt; i++){
+    for (int i = 0; i < cnt1; i++){
         // 并发写 
         thread thr1([&sm,&sem,&flag1](){
             int index = (flag1++)/10;
-            sm.store(index,new demo(index));
+            sm.store(index,index);
             sem.notify();
         });
 
         // 并发读
         thread thr2([&sm,&sem,&flag2](){
             int index = (flag2++)/10;
-            demo* d = nullptr;
-            sm.load(index,d);
+            int v;
+            sm.load(index,v);
             sem.notify();            
         });
     }
@@ -490,13 +485,12 @@ void testSyncMap(){
         });
     }
 
-    for (int i = 0; i < 2 * cnt + cnt2; i++){
+    for (int i = 0; i < 2 * cnt1 + cnt2; i++){
         sem.wait();
     }
 
-    sm.range([](const int& key, const demo* d)->bool{
-        int v = d->index;
-        std::cout << "key: " << key << " , "<< "value " << v << std::endl;
+    sm.range([](const int& key, const int& value)->bool{
+        std::cout << "key: " << key << " , "<< "value " << value << std::endl;
         return true;
     });
 
@@ -527,6 +521,48 @@ void testSharedPtr(){
     std::cout << "use cnt: " << ptr.use_count() << std::endl;
 }
 
+void testRadix(){
+    typedef cbricks::datastruct::RadixTree<int> radix;
+    radix tree;
+    tree.put("/search/v1",1);
+    tree.put("/search/v2",2);
+    tree.put("/search",3);
+    tree.put("/see",4);
+    tree.put("/apple",5);
+    tree.put("/app",6);
+    tree.put("/bar",7);
+    tree.put("/banana",8);
+
+    int receiver;
+    std::cout << "===========\n";
+    bool ret = tree.get("/abcd/ab",receiver);
+    std::cout << "key:" << "/abcd/ab;" << "ret:" << ret << ";value:" << receiver << "\n";
+    std::cout << "===========\n";
+    ret = tree.get("/search/v1",receiver);
+    std::cout << "key:" << "/search/v1;" << "ret:" << ret << ";value:" << receiver << "\n";
+    std::cout << "===========\n";
+    ret = tree.get("/search/v2",receiver);
+    std::cout << "key:" << "/search/v2;" << "ret:" << ret << ";value:" << receiver << "\n";
+    std::cout << "===========\n";
+    ret = tree.get("/search",receiver);
+    std::cout << "key:" << "/search;" << "ret:" << ret << ";value:" << receiver << "\n";
+    std::cout << "===========\n";
+    ret = tree.get("/see",receiver);
+    std::cout << "key:" << "/see;" << "ret:" << ret << ";value:" << receiver << "\n";
+    std::cout << "===========\n";
+    ret = tree.get("/apple",receiver);
+    std::cout << "key:" << "/apple;" << "ret:" << ret << ";value:" << receiver << "\n";
+    std::cout << "===========\n";
+    ret = tree.get("/app",receiver);
+    std::cout << "key:" << "/app;" << "ret:" << ret << ";value:" << receiver << "\n";
+    std::cout << "===========\n";
+    ret = tree.get("/bar",receiver);
+    std::cout << "key:" << "/bar;" << "ret:" << ret << ";value:" << receiver << "\n";
+    std::cout << "===========\n";
+    ret = tree.get("/banana",receiver);
+    std::cout << "key:" << "/banana;" << "ret:" << ret << ";value:" << receiver << "\n";
+}
+
 int main(int argc, char** argv){
     // testThread();
     // testCoroutine();
@@ -540,6 +576,7 @@ int main(int argc, char** argv){
     // testSignal();
     // testSyncMap();
     // testInstancePool();
-    testSharedPtr();
+    // testSharedPtr();
+    testRadix();
 }
 

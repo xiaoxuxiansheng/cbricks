@@ -13,5 +13,6 @@ target("cbricks")
     add_files("sync/*.cpp")
     add_files("pool/*.cpp")
     add_files("memory/*.cpp")
+    add_files("datastruct/*.cpp")
     -- add_files("mysql/*.cpp")
 

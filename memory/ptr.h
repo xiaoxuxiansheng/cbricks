@@ -135,6 +135,55 @@ void SharedPtr<T>::release(){
     delete this->m_cnt;
 }
 
+template<typename T>
+class WeakPtr{
+public:
+    /**
+     * 构造 析构
+     */
+    WeakPtr(const SharedPtr<T>& other);
+    WeakPtr(const WeakPtr<T>& other);
+    ~WeakPtr() = default;
+
+public:
+    // 公有方法
+    WeakPtr<T>& operator=(const WeakPtr<T>& other);
+    // 判断观察的对象是否过期
+    bool expired();
+    // 获取观察的对象
+    SharedPtr<T> lock();
+
+private:
+    SharedPtr<T>& m_ptr;
+};
+
+template <typename T>
+WeakPtr<T>::WeakPtr(const SharedPtr<T>& other):m_ptr(other){}
+
+template <typename T>
+WeakPtr<T>::WeakPtr(const WeakPtr<T>& other):m_ptr(other.m_ptr){}
+
+template <typename T>
+WeakPtr<T>& WeakPtr<T>::operator=(const WeakPtr<T>& other){
+    if (this == &other){
+        return *this;
+    }
+
+    this->m_ptr = other.m_ptr;
+    return *this;
+}
+
+template <typename T>
+bool WeakPtr<T>::expired(){
+    return this->m_ptr == nullptr;
+}
+
+template <typename T>
+SharedPtr<T> WeakPtr<T>::lock(){
+    return nullptr;
+}
+
+
 
 
 }}
