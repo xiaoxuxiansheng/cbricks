@@ -1,6 +1,6 @@
 # cbricks
 <p align="center">
-<font size="5">cbricks: 一些基于 c++ 11 实现的基本工具类</font>
+<font size="20">cbricks: 一些基于 c++ 11 实现的基本工具类</font>
 <br/><br/>
 </p>
 
