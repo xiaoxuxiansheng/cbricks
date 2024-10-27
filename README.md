@@ -1,8 +1,4 @@
-# cbricks
-<p align="center">
-### cbricks: 一些基于 c++ 11 实现的基本工具类
-<br/><br/>
-</p>
+# cbricks: 一些基于 c++ 11 实现的基本工具类
 
 <p align="center">
 <img src="https://github.com/xiaoxuxiansheng/cbricks/blob/main/img/workerpool.png" height="400px/"><br/><br/>
