@@ -79,7 +79,7 @@ std::vector<EpollFd::Event::ptr> EpollFd::wait(const int timeoutMilis){
     int ret = epoll_wait(this->m_fd, rawEvents, this->m_size, timeoutMilis);
     
     // 操作被中断，需要重新处理
-    if (errno == EINTR){
+    if (ret < 0 && errno == EINTR){
         return events;
     }
 

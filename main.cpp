@@ -240,7 +240,7 @@ void testLog(){
 //     cbricks::mysql::Conn conn;
 // }
 
-static const int PORT = 8080;
+static const int PORT = 8081;
 
 void testClient();
 
@@ -253,6 +253,12 @@ void testServer(){
     cbricks::log::Logger::Init("output/cbricks.log",2000);
     // 信号量
     semaphore sem;
+    // server s;
+    // std::function<std::string (std::string&)> cb = [](std::string& data)-> std::string{
+    //     LOG_INFO("handle request: %s",data);
+    //     return "success";
+    // };
+    // s.init(PORT,cb);
     // s.serve();
 
     // 异步启动 server
@@ -272,7 +278,7 @@ void testServer(){
     sleep(2);
 
     // 启动 n 个 client
-    int n = 1000;
+    int n = 100;
     for (int i = 0; i < n; i++){
         // 客户端并发请求
         thread client([&sem](){
@@ -308,12 +314,12 @@ void testClient(){
     CBRICKS_ASSERT(ret ==  0,"connect server fail");
 
     // 发送请求
-    std::string msg = "hello  request";
+    std::string msg = "hello request";
     send(clientSocket,msg.c_str(),msg.size(),0);
 
     // 接收响应
     char buffer[1024];
-    std::memset(buffer,0,1024);
+    // std::memset(buffer,0,1024);
     int read = recv(clientSocket,buffer,1024,0);
     CBRICKS_ASSERT(read >  0,"client recv fail");
 
@@ -571,12 +577,12 @@ int main(int argc, char** argv){
     // testWorkerPool();
     // testAssert();
     // testLog();
-    // testServer();
+    testServer();
     // testFc();
     // testSignal();
     // testSyncMap();
     // testInstancePool();
     // testSharedPtr();
-    testRadix();
+    // testRadix();
 }
 

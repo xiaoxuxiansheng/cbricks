@@ -187,43 +187,41 @@ bool Server::processSignal(){
  * spawnConn: 处理到达的客户端连接
  */
 void Server::spawnConn(){
-    // 异步执行
-    this->m_workerPool->submit([this](){
-        /**
-        * 退出前再次针对 socket fd 注册监听读就绪事件以及 oneshot 事件
-        */
-        defer d([this](){
-            this->m_epoll->modify(this->m_socket, epoll::Read);
+    // 处理连接需要同步执行，保证在执行新一轮 epoll_wait 前将 fd 添加到 epoll 事件表中
+    /**
+    * 退出前再次针对 socket fd 注册监听读就绪事件以及 oneshot 事件
+    */
+    defer d([this](){
+        this->m_epoll->modify(this->m_socket, epoll::Read);
+    });
+
+    sockaddr_in client_addr;
+    socklen_t client_addr_len = sizeof(client_addr);
+    /**
+    * et 模式，一次性处理所有到达的客户端连接
+    */
+    while(true){
+        // 获取到达的客户端连接
+        int connFd = accept(this->m_socket->get(), (sockaddr*)&client_addr, &client_addr_len);
+        if (connFd <= 0){
+            if (errno != EAGAIN){
+                LOG_ERROR("accept err, errno: %d",errno);
+            }   
+            return;
+        }
+
+        // 针对到来的 conn，重载对应的析构函数，实现 conn 析构时自动从 epoll 事件表中移除
+        conn::ptr _conn(new conn(connFd),[this](conn* connFd){
+            this->m_epoll->remove(connFd->get());
+            connFd->~ConnFd();
         });
 
-        sockaddr_in client_addr;
-        socklen_t client_addr_len = sizeof(client_addr);
-        /**
-        * et 模式，一次性处理所有到达的客户端连接
-        */
-        while(true){
-            // 获取到达的客户端连接
-            int connFd = accept(this->m_socket->get(), (sockaddr*)&client_addr, &client_addr_len);
-            if (connFd <= 0){
-                if (errno != EAGAIN){
-                    LOG_ERROR("accept err, errno: %d",errno);
-                }   
-                return;
-            }
-
-            // 针对到来的 conn，重载对应的析构函数，实现 conn 析构时自动从 epoll 事件表中移除
-            conn::ptr _conn(new conn(connFd),[this](conn* connFd){
-                this->m_epoll->remove(connFd->get());
-                connFd->~ConnFd();
-            });
-
-            lock::lockGuard guard(this->m_lock);
-            // conn 实例添加进入 conns 池中，防止析构
-            this->m_conns.insert({connFd,_conn});
-            // 在 epoll 事件表中注册监听 conn 的读就绪事件
-            this->m_epoll->add(_conn,epoll::Read);
-        }
-    });
+        lock::lockGuard guard(this->m_lock);
+        // conn 实例添加进入 conns 池中，防止析构
+        this->m_conns.insert({connFd,_conn});
+        // 在 epoll 事件表中注册监听 conn 的读就绪事件
+        this->m_epoll->add(_conn,epoll::Read);
+    }
 }
 
 /**
